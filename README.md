@@ -1,6 +1,8 @@
 # Interpolate
 
-[![GoDoc](https://godoc.org/github.com/mfridman/interpolate?status.svg)](https://godoc.org/github.com/mfridman/interpolate)
+[![Build Status](https://github.com/mfridman/interpolate/actions/workflows/ci.yaml/badge.svg)](https://github.com/mfridman/interpolate/actions/workflows/ci.yaml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mfridman/interpolate.svg)](https://pkg.go.dev/github.com/mfridman/interpolate)
+[![Go Report Card](https://goreportcard.com/badge/github.com/mfridman/interpolate)](https://goreportcard.com/report/github.com/mfridman/interpolate)
 
 A Go library for parameter expansion (like `${NAME}` or `$NAME`) in strings from environment
 variables. An implementation of [POSIX Parameter
