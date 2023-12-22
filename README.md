@@ -25,13 +25,15 @@ import (
 )
 
 func main() {
-	env := interpolate.NewSliceEnv([]string{
-		"NAME=James",
-	})
+  env := interpolate.NewSliceEnv([]string{
+    "NAME=James",
+  })
 
-	output, _ := interpolate.Interpolate(env, "Hello... ${NAME} welcome to the ${ANOTHER_VAR:-🏖}")
+  output, _ := interpolate.Interpolate(env, "Hello... ${NAME} welcome to the ${ANOTHER_VAR:-🏖}")
 
-	// Output: Hello... James welcome to the 🏖
+  fmt.Println(output)
+  // Output: Hello... James welcome to the 🏖
+}
 ```
 
 ## Supported Expansions
