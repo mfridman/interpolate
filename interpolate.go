@@ -5,7 +5,8 @@ import (
 	"fmt"
 )
 
-// Interpolate takes a set of environment and interpolates it into the provided string using shell script expansions
+// Interpolate takes a set of environment and interpolates it into the provided string using shell
+// script expansions
 func Interpolate(env Env, str string) (string, error) {
 	if env == nil {
 		env = NewSliceEnv(nil)

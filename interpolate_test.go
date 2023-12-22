@@ -6,21 +6,21 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/buildkite/interpolate"
+	"github.com/mfridman/interpolate"
 )
 
 func ExampleInterpolate() {
 	env := interpolate.NewSliceEnv([]string{
-		"HELLO_WORLD=🦀",
+		"NAME=James",
 	})
 
-	output, err := interpolate.Interpolate(env, "Buildkite... ${HELLO_WORLD} ${ANOTHER_VAR:-🏖}")
+	output, err := interpolate.Interpolate(env, "Hello... ${NAME} welcome to the ${ANOTHER_VAR:-🏖}")
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(output)
 
-	// Output: Buildkite... 🦀 🏖
+	// Output: Hello... James welcome to the 🏖
 }
 
 func TestBasicInterpolation(t *testing.T) {
