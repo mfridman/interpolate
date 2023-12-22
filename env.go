@@ -5,11 +5,15 @@ import (
 	"strings"
 )
 
+// Env is an interface for getting environment variables by name and returning a boolean indicating
+// whether the variable was found.
 type Env interface {
 	Get(key string) (string, bool)
 }
 
-// Creates an Env from a slice of environment variables
+// NewSliceEnv creates an Env from a slice of environment variables in the form "key=value".
+//
+// This can be used with [os.Environ] to create an Env.
 func NewSliceEnv(env []string) Env {
 	envMap := mapEnv{}
 	for _, l := range env {
@@ -21,7 +25,7 @@ func NewSliceEnv(env []string) Env {
 	return envMap
 }
 
-// Creates an Env from a map of environment variables
+// NewMapEnv creates an Env from a map of environment variables.
 func NewMapEnv(env map[string]string) Env {
 	envMap := mapEnv{}
 	for k, v := range env {
