@@ -74,7 +74,7 @@ func main() {
 ## Prior work
 
 This repository is a fork of [buildkite/interpolate](https://github.com/buildkite/interpolate). I'd
-to thank the authors of that library for their work. I've forked it to make some changes that I
+like to thank the authors of that library for their work. I've forked it to make some changes that I
 needed for my own use cases, and to make it easier to maintain. I've also added some tests and
 documentation.
 
