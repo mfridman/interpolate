@@ -79,8 +79,7 @@ func main() {
   - **Indicate Error if Null or Unset.** If parameter is unset or null, the expansion of word (or a
     message indicating it is unset if word is omitted) shall be returned as an error.
 
-    > [!WARNING]  
-    > This is not currently supported
+    **⚠️ This is not currently supported ⚠️**
 
 ## Prior work
 
