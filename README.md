@@ -71,13 +71,16 @@ func main() {
 
 - `${parameter?[word]}`
 
-  - **Indicate Error if Null or Unset.** If parameter is unset, the expansion of word (or a
-    message indicating it is unset if word is omitted) shall be returned as an error.
+  - **Indicate Error if Null.** If parameter is unset, the expansion of word (or a message
+    indicating it is unset if word is omitted) shall be returned as an error.
 
 - `${parameter:?[word]}`
+
   - **Indicate Error if Null or Unset.** If parameter is unset or null, the expansion of word (or a
     message indicating it is unset if word is omitted) shall be returned as an error.
-  - **Note:** This is not currently supported
+
+    > [!WARNING]  
+    > This is not currently supported
 
 ## Prior work
 
