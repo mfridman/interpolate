@@ -69,9 +69,15 @@ func main() {
     is out of bounds, an empty string will be substituted. If the length is greater than the length
     then the entire string will be returned.
 
+- `${parameter?[word]}`
+
+  - **Indicate Error if Null or Unset.** If parameter is unset, the expansion of word (or a
+    message indicating it is unset if word is omitted) shall be returned as an error.
+
 - `${parameter:?[word]}`
   - **Indicate Error if Null or Unset.** If parameter is unset or null, the expansion of word (or a
     message indicating it is unset if word is omitted) shall be returned as an error.
+  - **Note:** This is not currently supported
 
 ## Prior work
 

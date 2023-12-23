@@ -23,11 +23,17 @@ import (
 // functions and structs named the same reading the string bite by bite (peekRune and nextRune)
 
 /*
-EscapedBackslash = "\\" EscapedDollar    = ( "\$" | "$$") Identifier       = letter { letters |
-digit | "_" } Expansion        = "$" ( Identifier | Brace ) Brace            = "{" Identifier [
-Identifier BraceOperation ] "}" Text = { EscapedBackslash | EscapedDollar | all characters except
-"$" } Expression = { Text | Expansion } EmptyValue       = ":-" { Expression } UnsetValue       =
-"-" { Expression } Substring        = ":" number [ ":" number ] Required = "?" { Expression }
+EscapedBackslash = "\\"
+EscapedDollar    = ( "\$" | "$$")
+Identifier       = letter { letters | digit | "_" }
+Expansion        = "$" ( Identifier | Brace )
+Brace            = "{" Identifier [ Identifier BraceOperation ] "}"
+Text             = { EscapedBackslash | EscapedDollar | all characters except "$" }
+Expression       = { Text | Expansion }
+EmptyValue       = ":-" { Expression }
+UnsetValue       = "-" { Expression }
+Substring        = ":" number [ ":" number ]
+Required         = "?" { Expression }
 Operation        = EmptyValue | UnsetValue | Substring | Required
 */
 
