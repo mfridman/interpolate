@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/mfridman/interpolate"
@@ -210,6 +212,32 @@ func TestParseErrors(t *testing.T) {
 		{input: "${FOO:1:2:3}", wantErr: `parse substring length: strconv.Atoi: parsing "2:3": invalid syntax`},
 		{input: "${FOO:99999999999999999999}", wantErr: `parse substring offset: strconv.Atoi: parsing "99999999999999999999": value out of range`},
 	})
+}
+
+func TestNestingDepthLimit(t *testing.T) {
+	t.Parallel()
+
+	// maxNestingDepth is the same as the unexported limit in parser.go.
+	const maxNestingDepth = 1000
+
+	nested := func(depth int) string {
+		return strings.Repeat("${A:-", depth) + "deep" + strings.Repeat("}", depth)
+	}
+	wantErr := "brace expansions nested deeper than " + strconv.Itoa(maxNestingDepth) + " levels"
+
+	runInterpolateTests(t, nil, []interpolateTest{
+		{input: nested(maxNestingDepth), want: "deep"},
+		{input: nested(maxNestingDepth + 1), wantErr: wantErr},
+		// Sibling expansions do not add to the depth.
+		{input: strings.Repeat("${A:-x}", maxNestingDepth+1), want: strings.Repeat("x", maxNestingDepth+1)},
+		// Escaped expansions are text, so they do not add to the depth.
+		{input: strings.Repeat("$${A:-", maxNestingDepth+1), want: strings.Repeat("${A:-", maxNestingDepth+1)},
+	})
+
+	// A very deep input must fail fast with an error, not exhaust the stack.
+	if _, err := interpolate.Interpolate(nil, nested(10_000_000)); err == nil || err.Error() != wantErr {
+		t.Errorf("Interpolate(nested(10_000_000)) error = %v, want %q", err, wantErr)
+	}
 }
 
 func TestMissingParameterValuesReturnEmptyStrings(t *testing.T) {

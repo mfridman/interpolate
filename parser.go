@@ -43,12 +43,18 @@ Operation         = EmptyValue | UnsetValue | Substring | RequiredNonEmpty | Req
 
 const (
 	eof = -1
+
+	// maxNestingDepth is the maximum number of brace expansions that can be nested inside each
+	// other, as in ${A:-${B:-${C}}}. The parser is recursive, so the limit protects against stack
+	// exhaustion from untrusted input.
+	maxNestingDepth = 1000
 )
 
 // Parser takes a string and parses out a tree of structs that represent text and Expansions
 type Parser struct {
 	input string // the string we are scanning
 	pos   int    // the current position
+	depth int    // the current number of nested brace expansions
 }
 
 // NewParser returns a new instance of a Parser
@@ -133,6 +139,12 @@ func (p *Parser) parseExpansion() (Expansion, error) {
 func (p *Parser) parseBraceExpansion() (Expansion, error) {
 	if c := p.nextRune(); c != '{' {
 		return nil, fmt.Errorf("expected brace expansion to start with {, got %s", describeRune(c))
+	}
+
+	p.depth++
+	defer func() { p.depth-- }()
+	if p.depth > maxNestingDepth {
+		return nil, fmt.Errorf("brace expansions nested deeper than %d levels", maxNestingDepth)
 	}
 
 	// ${#parameter} is the length of the value, so it has a prefix and no operator.
