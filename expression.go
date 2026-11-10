@@ -85,7 +85,7 @@ func (e variableExpansion) variables() []string {
 }
 
 func (e variableExpansion) expand(env Env) (string, error) {
-	value, _ := env.Get(e.Identifier)
+	value, _ := env.Lookup(e.Identifier)
 	return value, nil
 }
 
@@ -100,7 +100,7 @@ func (e emptyValueExpansion) variables() []string {
 }
 
 func (e emptyValueExpansion) expand(env Env) (string, error) {
-	if value, _ := env.Get(e.Identifier); value != "" {
+	if value, _ := env.Lookup(e.Identifier); value != "" {
 		return value, nil
 	}
 	return e.Content.expand(env)
@@ -117,7 +117,7 @@ func (e unsetValueExpansion) variables() []string {
 }
 
 func (e unsetValueExpansion) expand(env Env) (string, error) {
-	if value, ok := env.Get(e.Identifier); ok {
+	if value, ok := env.Lookup(e.Identifier); ok {
 		return value, nil
 	}
 	return e.Content.expand(env)
@@ -134,7 +134,7 @@ func (e requiredExpansion) variables() []string {
 }
 
 func (e requiredExpansion) expand(env Env) (string, error) {
-	value, ok := env.Get(e.Identifier)
+	value, ok := env.Lookup(e.Identifier)
 	if !ok {
 		return "", requiredError(env, e.Identifier, e.Message, "not set")
 	}
@@ -153,7 +153,7 @@ func (e requiredNonEmptyExpansion) variables() []string {
 }
 
 func (e requiredNonEmptyExpansion) expand(env Env) (string, error) {
-	value, _ := env.Get(e.Identifier)
+	value, _ := env.Lookup(e.Identifier)
 	if value == "" {
 		return "", requiredError(env, e.Identifier, e.Message, "empty or not set")
 	}
@@ -171,7 +171,7 @@ func (e alternateExpansion) variables() []string {
 }
 
 func (e alternateExpansion) expand(env Env) (string, error) {
-	if _, ok := env.Get(e.Identifier); !ok {
+	if _, ok := env.Lookup(e.Identifier); !ok {
 		return "", nil
 	}
 	return e.Content.expand(env)
@@ -189,7 +189,7 @@ func (e alternateNonEmptyExpansion) variables() []string {
 }
 
 func (e alternateNonEmptyExpansion) expand(env Env) (string, error) {
-	if value, _ := env.Get(e.Identifier); value == "" {
+	if value, _ := env.Lookup(e.Identifier); value == "" {
 		return "", nil
 	}
 	return e.Content.expand(env)
@@ -205,7 +205,7 @@ func (e lengthExpansion) variables() []string {
 }
 
 func (e lengthExpansion) expand(env Env) (string, error) {
-	value, _ := env.Get(e.Identifier)
+	value, _ := env.Lookup(e.Identifier)
 	return strconv.Itoa(utf8.RuneCountInString(value)), nil
 }
 
@@ -222,7 +222,7 @@ func (e substringExpansion) variables() []string {
 }
 
 func (e substringExpansion) expand(env Env) (string, error) {
-	value, _ := env.Get(e.Identifier)
+	value, _ := env.Lookup(e.Identifier)
 	// Offsets and lengths count characters, not bytes, the same as bash in a UTF-8 locale. Each
 	// invalid UTF-8 byte counts as one character and is kept unchanged.
 	size := utf8.RuneCountInString(value)

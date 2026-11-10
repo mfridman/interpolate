@@ -6,14 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `LookupFunc`, an adapter that makes a function such as `os.LookupEnv` an `Env`.
+
 ### Changed
 
 - `Interpolate(env, s)` is now `Expand(s, env)`.
 - `Identifiers` is now `Variables`, and returns each name only once, in the order of first use.
+- The `Get` method of `Env` is now `Lookup`.
+- `NewSliceEnv(slice)` is now `NewListEnv(pairs...)`. Use `NewListEnv(os.Environ()...)` for a slice.
 
 ### Removed
 
 - The exported parser and expression types, such as `Parser`, `NewParser`, `Expression`, `ExpressionItem`, `Expansion`, and the `*Expansion` types. Use `Expand` and `Variables`.
+
+### Fixed
+
+- On Windows, `NewMapEnv` with keys that differ only in case, such as `Path` and `PATH`, gave a random result. The last key in sorted order now wins.
 
 ## [v0.1.0] - 2026-11-10
 

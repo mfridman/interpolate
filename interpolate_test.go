@@ -3,6 +3,7 @@ package interpolate_test
 import (
 	"fmt"
 	"log"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,7 +13,7 @@ import (
 )
 
 func ExampleExpand() {
-	env := interpolate.NewSliceEnv([]string{"NAME=James"})
+	env := interpolate.NewListEnv("NAME=James")
 
 	output, err := interpolate.Expand("Hello ${NAME}, welcome to the ${PLACE:-🏖}", env)
 	if err != nil {
@@ -31,6 +32,18 @@ func ExampleVariables() {
 	fmt.Println(names)
 
 	// Output: [HOST PORT]
+}
+
+func ExampleLookupFunc() {
+	env := interpolate.LookupFunc(os.LookupEnv)
+
+	output, err := interpolate.Expand("${INTERPOLATE_EXAMPLE_UNSET:-default}", env)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(output)
+
+	// Output: default
 }
 
 func ExampleNewMapEnv() {
@@ -541,9 +554,9 @@ func TestVariablesParseError(t *testing.T) {
 }
 
 func BenchmarkExpand(b *testing.B) {
-	env := interpolate.NewSliceEnv([]string{
+	env := interpolate.NewListEnv(
 		"HELLO_WORLD=🦀",
-	})
+	)
 
 	b.ReportAllocs()
 	for b.Loop() {

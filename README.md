@@ -26,7 +26,7 @@ import (
 )
 
 func main() {
-	env := interpolate.NewSliceEnv([]string{"NAME=James"})
+	env := interpolate.NewListEnv("NAME=James")
 
 	output, err := interpolate.Expand("Hello ${NAME}, welcome to the ${PLACE:-🏖}", env)
 	if err != nil {
@@ -38,9 +38,10 @@ func main() {
 
 Values come from an `Env`:
 
-- `interpolate.NewSliceEnv(os.Environ())` reads the process environment, or any `NAME=value` pairs.
+- `interpolate.LookupFunc(os.LookupEnv)` reads the process environment.
 - `interpolate.NewMapEnv(m)` reads a `map[string]string`.
-- Any type with a `Get(key string) (string, bool)` method is an `Env`.
+- `interpolate.NewListEnv("A=1", "B=2")` reads `NAME=value` pairs, such as `os.Environ()...`.
+- Any type with a `Lookup(name string) (string, bool)` method is an `Env`.
 
 `interpolate.Variables` returns the names of the variables in a string, without repeats, and does not expand it.
 

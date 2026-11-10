@@ -7,7 +7,7 @@ package interpolate
 // fails.
 func Expand(s string, env Env) (string, error) {
 	if env == nil {
-		env = NewSliceEnv(nil)
+		env = mapEnv{}
 	}
 	expr, err := newParser(s).Parse()
 	if err != nil {
