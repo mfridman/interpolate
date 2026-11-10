@@ -67,8 +67,11 @@ func NewParser(str string) *Parser {
 	}
 }
 
-// Parse expansions out of the internal text and return them as a tree of Expressions
+// Parse expansions out of the internal text and return them as a tree of Expressions. Each call
+// parses the whole input again.
 func (p *Parser) Parse() (Expression, error) {
+	p.pos = 0
+	p.depth = 0
 	return p.parseExpression()
 }
 

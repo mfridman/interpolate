@@ -7,6 +7,49 @@ import (
 	"github.com/mfridman/interpolate"
 )
 
+func TestParserReuse(t *testing.T) {
+	t.Parallel()
+
+	parser := interpolate.NewParser("a $B c")
+	first, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("first Parse() error = %v", err)
+	}
+	second, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("second Parse() error = %v", err)
+	}
+	if len(first) != 3 || !reflect.DeepEqual(first, second) {
+		t.Errorf("Parse() = %v, then %v, want the same 3 items twice", first, second)
+	}
+
+	invalid := interpolate.NewParser("${FOO")
+	for range 2 {
+		if _, err := invalid.Parse(); err == nil {
+			t.Error(`NewParser("${FOO").Parse() error = nil, want error on each call`)
+		}
+	}
+}
+
+func TestExpressionItemString(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		item interpolate.ExpressionItem
+		want string
+	}{
+		{item: interpolate.ExpressionItem{Text: "a b"}, want: `"a b"`},
+		{
+			item: interpolate.ExpressionItem{Expansion: interpolate.VariableExpansion{Identifier: "B"}},
+			want: `interpolate.VariableExpansion{Identifier:"B"}`,
+		},
+	} {
+		if got := tc.item.String(); got != tc.want {
+			t.Errorf("String() = %s, want %s", got, tc.want)
+		}
+	}
+}
+
 func TestParser(t *testing.T) {
 	t.Parallel()
 
