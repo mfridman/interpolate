@@ -3,7 +3,7 @@ package interpolate_test
 import (
 	"fmt"
 	"log"
-	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/mfridman/interpolate"
@@ -23,431 +23,47 @@ func ExampleInterpolate() {
 	// Output: Hello... James welcome to the 🏖
 }
 
-func TestBasicInterpolation(t *testing.T) {
-	t.Parallel()
-
-	environ := interpolate.NewMapEnv(map[string]string{
-		"TEST1": "A test",
-		"TEST2": "Another",
-		"TEST3": "Llamas",
-		"TEST4": "Only one level of $TEST3 interpolation",
-	})
-
-	for _, tc := range []struct {
-		Str      string
-		Expected string
-	}{
-		{``, ``},
-		{`foo`, `foo`},
-		{`test1`, `test1`},
-		{`TEST1`, `TEST1`},
-		{`$TEST1`, `A test`},
-		{`${TEST1}`, `A test`},
-		{`$TEST1, $TEST2, $TEST3`, `A test, Another, Llamas`},
-		{`$Test1, $Test2, $TeST3`, `, , `},
-		{`${TEST1}, ${Test2}, ${tEST3}`, `A test, , `},
-		{`my$TEST1`, `myA test`},
-		{`$TEST4`, "Only one level of $TEST3 interpolation"},
-		{`${TEST4}`, "Only one level of $TEST3 interpolation"},
-	} {
-		t.Run(tc.Str, func(t *testing.T) {
-			result, err := interpolate.Interpolate(environ, tc.Str)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result != tc.Expected {
-				t.Fatalf("Test %q failed: Expected substring %q, got %q", tc.Str, tc.Expected, result)
-			}
-		})
+func ExampleIdentifiers() {
+	identifiers, err := interpolate.Identifiers("${HOST:-localhost}:${PORT:?port is required} $1")
+	if err != nil {
+		log.Fatal(err)
 	}
+	fmt.Println(identifiers)
+
+	// Output: [HOST PORT]
 }
 
-func TestNestedInterpolation(t *testing.T) {
-	t.Parallel()
-
-	environ := interpolate.NewMapEnv(map[string]string{
-		"TEST1": "A test",
-		"TEST2": "Another",
-		"TEST3": "Llamas",
-		"TEST4": "Only one level of $TEST3 interpolation",
-	})
-
-	for _, tc := range []struct {
-		Str      string
-		Expected string
-	}{
-		{`${TEST5:-${TEST6:-$TEST1}}`, "A test"},
-		{`${TEST5:-${TEST2:-$TEST1}}`, "Another"},
-		{`${TEST5:-Some text ${TEST2:-$TEST1} with $TEST3}`, "Some text Another with Llamas"},
-	} {
-		t.Run(tc.Str, func(t *testing.T) {
-			result, err := interpolate.Interpolate(environ, tc.Str)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result != tc.Expected {
-				t.Fatalf("Test %q failed: Expected substring %q, got %q", tc.Str, tc.Expected, result)
-			}
-		})
-	}
-}
-
-func TestIgnoresParentheses(t *testing.T) {
-	t.Parallel()
-
-	for _, str := range []string{
-		`$(echo hello world)`,
-		`testing $(echo hello world)`,
-		`$(`,
-	} {
-		result, err := interpolate.Interpolate(nil, str)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result != str {
-			t.Fatalf("Test %q failed: Expected substring %q, got %q", str, str, result)
-		}
-	}
-}
-
-func TestLiteralDollarSigns(t *testing.T) {
-	t.Parallel()
-
-	environ := interpolate.NewMapEnv(map[string]string{
-		"TEST1": "A test",
-	})
-
-	for _, tc := range []struct {
-		input string
-		want  string
-	}{
-		{input: "$", want: "$"},
-		{input: "trailing $", want: "trailing $"},
-		{input: "This $ is not a variable", want: "This $ is not a variable"},
-		{input: "$1 burgers", want: "$1 burgers"},
-		{input: "$99bottles", want: "$99bottles"},
-		{input: "price: $5, $TEST1", want: "price: $5, A test"},
-		{input: "SELECT * FROM t WHERE id = $1 AND name = $2", want: "SELECT * FROM t WHERE id = $1 AND name = $2"},
-		{input: "a$\tb", want: "a$\tb"},
-		{input: "$-$@$*$#$?$!", want: "$-$@$*$#$?$!"},
-		{input: "grep 'xi$'", want: "grep 'xi$'"},
-		{input: "${UNSET:-$}", want: "$"},
-		{input: "${UNSET:-$5}", want: "$5"},
-		{input: "$é", want: "$é"},
-	} {
-		tc := tc
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := interpolate.Interpolate(environ, tc.input)
-			if err != nil {
-				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
-			}
-			if got != tc.want {
-				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestUnderscoreIdentifiers(t *testing.T) {
-	t.Parallel()
-
-	environ := interpolate.NewMapEnv(map[string]string{
-		"_":       "underscore",
-		"_TEST":   "leading",
-		"TEST_1_": "trailing",
-	})
-
-	for _, tc := range []struct {
-		input string
-		want  string
-	}{
-		{input: "$_", want: "underscore"},
-		{input: "${_}", want: "underscore"},
-		{input: "$_TEST", want: "leading"},
-		{input: "${_TEST}", want: "leading"},
-		{input: "$TEST_1_", want: "trailing"},
-		{input: "${_UNSET:-default}", want: "default"},
-	} {
-		tc := tc
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := interpolate.Interpolate(environ, tc.input)
-			if err != nil {
-				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
-			}
-			if got != tc.want {
-				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestInvalidBraceExpansions(t *testing.T) {
-	t.Parallel()
-
-	for _, input := range []string{
-		"${}",
-		"${1}",
-		"${é}",
-		"${FOO!}",
-	} {
-		input := input
-		t.Run(input, func(t *testing.T) {
-			t.Parallel()
-
-			if _, err := interpolate.Interpolate(nil, input); err == nil {
-				t.Errorf("Interpolate(%q) error = nil, want error", input)
-			}
-		})
-	}
-}
-
-func TestMissingParameterValuesReturnEmptyStrings(t *testing.T) {
-	t.Parallel()
-
-	for _, str := range []string{
-		`$BUILDKITE_COMMIT`,
-		`${BUILDKITE_COMMIT}`,
-		`${BUILDKITE_COMMIT:0:7}`,
-		`${BUILDKITE_COMMIT:7}`,
-		`${BUILDKITE_COMMIT:0:7}`,
-		`${BUILDKITE_COMMIT:7:14}`,
-	} {
-		t.Run(str, func(t *testing.T) {
-			result, err := interpolate.Interpolate(nil, str)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result != "" {
-				t.Fatalf("Expected empty string, got %q", result)
-			}
-		})
-	}
-}
-
-func TestSubstringsWithOffsets(t *testing.T) {
-	t.Parallel()
-
-	environ := interpolate.NewMapEnv(map[string]string{"BUILDKITE_COMMIT": "1adf998e39f647b4b25842f107c6ed9d30a3a7c7"})
-
-	for _, tc := range []struct {
-		Str      string
-		Expected string
-	}{
-		// in range offsets, no lengths
-		{`${BUILDKITE_COMMIT:0}`, `1adf998e39f647b4b25842f107c6ed9d30a3a7c7`},
-		{`${BUILDKITE_COMMIT:7}`, `e39f647b4b25842f107c6ed9d30a3a7c7`},
-		{`${BUILDKITE_COMMIT: -7}`, `0a3a7c7`},
-
-		// out of range offsets, no lengths
-		{`${BUILDKITE_COMMIT: -128}`, `1adf998e39f647b4b25842f107c6ed9d30a3a7c7`},
-		{`${BUILDKITE_COMMIT:128}`, ``},
-
-		// in range offsets and lengths
-		{`${BUILDKITE_COMMIT:0:7}`, `1adf998`},
-		{`${BUILDKITE_COMMIT:7:7}`, `e39f647`},
-		{`${BUILDKITE_COMMIT:7:-7}`, `e39f647b4b25842f107c6ed9d3`},
-
-		// zero lengths
-		{`${BUILDKITE_COMMIT:0:0}`, ``},
-		{`${BUILDKITE_COMMIT:7:0}`, ``},
-
-		// in range offsets and out of range lengths
-		{`${BUILDKITE_COMMIT:0:128}`, `1adf998e39f647b4b25842f107c6ed9d30a3a7c7`},
-		{`${BUILDKITE_COMMIT:7:128}`, `e39f647b4b25842f107c6ed9d30a3a7c7`},
-		{`${BUILDKITE_COMMIT:0:-128}`, ``},
-		{`${BUILDKITE_COMMIT:7:-128}`, ``},
-	} {
-		t.Run(tc.Str, func(t *testing.T) {
-			result, err := interpolate.Interpolate(environ, tc.Str)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result != tc.Expected {
-				t.Fatalf("Expected substring %q, got %q", tc.Expected, result)
-			}
-		})
-	}
-}
-
-func TestSubstringsWithMultibyteCharacters(t *testing.T) {
-	t.Parallel()
-
-	environ := interpolate.NewMapEnv(map[string]string{"GREETING": "héllo wörld 🦀"})
-
-	for _, tc := range []struct {
-		input string
-		want  string
-	}{
-		{input: "${GREETING:1}", want: "éllo wörld 🦀"},
-		{input: "${GREETING:2}", want: "llo wörld 🦀"},
-		{input: "${GREETING:1:3}", want: "éll"},
-		{input: "${GREETING: -1}", want: "🦀"},
-		{input: "${GREETING: -7:5}", want: "wörld"},
-		{input: "${GREETING:6:-2}", want: "wörld"},
-	} {
-		tc := tc
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := interpolate.Interpolate(environ, tc.input)
-			if err != nil {
-				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
-			}
-			if got != tc.want {
-				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestInvalidUTF8IsPreserved(t *testing.T) {
-	t.Parallel()
-
-	environ := interpolate.NewMapEnv(map[string]string{"TEST1": "A test"})
-
-	for _, tc := range []struct {
-		input string
-		want  string
-	}{
-		{input: "bad\xffbyte", want: "bad\xffbyte"},
-		{input: "\xfe\xff", want: "\xfe\xff"},
-		{input: "$TEST1\xff", want: "A test\xff"},
-		{input: "${UNSET:-\xff}", want: "\xff"},
-		{input: "valid \uFFFD stays", want: "valid \uFFFD stays"},
-	} {
-		tc := tc
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := interpolate.Interpolate(environ, tc.input)
-			if err != nil {
-				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
-			}
-			if got != tc.want {
-				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestParseErrors(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range []struct {
-		input   string
-		wantErr string
-	}{
-		{input: "${FOO", wantErr: "expected an operator, got end of input"},
-		{input: "${FOO:-bar", wantErr: "expected brace expansion to end with }, got end of input"},
-		{input: "${", wantErr: "expected identifier to start with a letter or underscore, got end of input"},
-		{input: "${FOO!}", wantErr: "expected an operator, got '!'"},
-		{input: "${1}", wantErr: "expected identifier to start with a letter or underscore, got '1'"},
-	} {
-		tc := tc
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-
-			_, err := interpolate.Interpolate(nil, tc.input)
-			if err == nil || err.Error() != tc.wantErr {
-				t.Errorf("Interpolate(%q) error = %v, want %q", tc.input, err, tc.wantErr)
-			}
-		})
-	}
-}
-
-func TestInterpolateIsntGreedy(t *testing.T) {
-	t.Parallel()
-
-	environ := interpolate.NewMapEnv(map[string]string{
-		"BUILDKITE_COMMIT":       "cfeeee3fa7fa1a6311723f5cbff95b738ec6e683",
-		"BUILDKITE_PARALLEL_JOB": "456",
-	})
-
-	for _, tc := range []struct {
-		Str      string
-		Expected string
-	}{
-		{`echo "ENV_1=test_$BUILDKITE_COMMIT_$BUILDKITE_PARALLEL_JOB"`, `echo "ENV_1=test_456"`},
-		{`echo "ENV_1=test-$BUILDKITE_COMMIT-$BUILDKITE_PARALLEL_JOB"`, `echo "ENV_1=test-cfeeee3fa7fa1a6311723f5cbff95b738ec6e683-456"`},
-		{`echo "ENV_1=test_${BUILDKITE_COMMIT}_${BUILDKITE_PARALLEL_JOB}"`, `echo "ENV_1=test_cfeeee3fa7fa1a6311723f5cbff95b738ec6e683_456"`},
-	} {
-		result, err := interpolate.Interpolate(environ, tc.Str)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result != tc.Expected {
-			t.Fatalf("Expected substring %q, got %q", tc.Expected, result)
-		}
-	}
-}
-
-func TestDefaultValues(t *testing.T) {
-	t.Parallel()
-
-	environ := interpolate.NewMapEnv(map[string]string{
-		"DAY":       "Blarghday",
-		"EMPTY_DAY": "",
-	})
-
-	for _, tc := range []struct {
-		Str      string
-		Expected string
-	}{
-		{`Today is ${TODAY-Tuesday}`, `Today is Tuesday`},
-		{`Tomorrow is ${TOMORROW-Wednesday}`, `Tomorrow is Wednesday`},
-		{`Today is ${DAY-Wednesday}`, `Today is Blarghday`},
-		{`Today is ${EMPTY_DAY-Wednesday}`, `Today is `},
-		{`Today is ${EMPTY_DAY:-Wednesday}`, `Today is Wednesday`},
-		{`${EMPTY_DAY:--:{}}`, `-:{}`},
-		{`${EMPTY:-${LLAMAS-test}}`, `test`},
-		{`${EMPTY:-127}`, `127`},
-	} {
-		result, err := interpolate.Interpolate(environ, tc.Str)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result != tc.Expected {
-			t.Fatalf("Test %q failed: Expected substring %q, got %q", tc.Str, tc.Expected, result)
-		}
-	}
-}
-
-func TestRequiredVariables(t *testing.T) {
-	t.Parallel()
-
-	environ := interpolate.NewMapEnv(map[string]string{
-		"SET":   "value",
+func ExampleNewMapEnv() {
+	env := interpolate.NewMapEnv(map[string]string{
+		"USER":  "llama",
 		"EMPTY": "",
-		"NAME":  "llamas",
 	})
 
-	for _, tc := range []struct {
-		input   string
-		want    string
-		wantErr string
-	}{
-		{input: `Hello ${REQUIRED_VAR?}`, wantErr: `$REQUIRED_VAR: not set`},
-		{input: `Hello ${REQUIRED_VAR?y u no set me? :-{}`, wantErr: `$REQUIRED_VAR: y u no set me? :-{`},
-		{input: `Hello ${REQUIRED_VAR?{}}`, wantErr: `$REQUIRED_VAR: {`},
-		{input: `${REQUIRED_VAR?missing $NAME}`, wantErr: `$REQUIRED_VAR: missing llamas`},
-		{input: `${SET?}`, want: `value`},
-		{input: `${EMPTY?}`, want: ``},
-		{input: `${SET:?}`, want: `value`},
-		{input: `${EMPTY:?}`, wantErr: `$EMPTY: empty or not set`},
-		{input: `${REQUIRED_VAR:?}`, wantErr: `$REQUIRED_VAR: empty or not set`},
-		{input: `${EMPTY:?must be set}`, wantErr: `$EMPTY: must be set`},
-		{input: `${EMPTY:?${UNSET:-fallback} message}`, wantErr: `$EMPTY: fallback message`},
-		{input: `${UNSET:-${EMPTY:?inner}}`, wantErr: `$EMPTY: inner`},
-	} {
-		tc := tc
+	output, err := interpolate.Interpolate(env, "${USER:+--user=$USER} ${EMPTY:-default} ${#USER}")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(output)
+
+	// Output: --user=llama default 5
+}
+
+// interpolateTest is a test case for Interpolate. If wantErr is set, the test expects an error with
+// that exact message.
+type interpolateTest struct {
+	input   string
+	want    string
+	wantErr string
+}
+
+func runInterpolateTests(t *testing.T, env interpolate.Env, tests []interpolateTest) {
+	t.Helper()
+
+	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := interpolate.Interpolate(environ, tc.input)
+			got, err := interpolate.Interpolate(env, tc.input)
 			if tc.wantErr != "" {
 				if err == nil || err.Error() != tc.wantErr {
 					t.Errorf("Interpolate(%q) error = %v, want %q", tc.input, err, tc.wantErr)
@@ -464,19 +80,308 @@ func TestRequiredVariables(t *testing.T) {
 	}
 }
 
-func TestAlternateValues(t *testing.T) {
+func TestBasicInterpolation(t *testing.T) {
 	t.Parallel()
 
-	environ := interpolate.NewMapEnv(map[string]string{
+	env := interpolate.NewMapEnv(map[string]string{
+		"TEST1": "A test",
+		"TEST2": "Another",
+		"TEST3": "Llamas",
+		"TEST4": "Only one level of $TEST3 interpolation",
+	})
+
+	runInterpolateTests(t, env, []interpolateTest{
+		{input: "", want: ""},
+		{input: "foo", want: "foo"},
+		{input: "test1", want: "test1"},
+		{input: "TEST1", want: "TEST1"},
+		{input: "$TEST1", want: "A test"},
+		{input: "${TEST1}", want: "A test"},
+		{input: "$TEST1, $TEST2, $TEST3", want: "A test, Another, Llamas"},
+		{input: "$Test1, $Test2, $TeST3", want: ", , "},
+		{input: "${TEST1}, ${Test2}, ${tEST3}", want: "A test, , "},
+		{input: "my$TEST1", want: "myA test"},
+		{input: "$TEST4", want: "Only one level of $TEST3 interpolation"},
+		{input: "${TEST4}", want: "Only one level of $TEST3 interpolation"},
+		{input: "$TEST1$TEST2", want: "A testAnother"},
+		{input: "${TEST1}${TEST2}", want: "A testAnother"},
+		{input: "unmatched } brace", want: "unmatched } brace"},
+		{input: `back\slash \n`, want: `back\slash \n`},
+		{input: `\\`, want: `\\`},
+		{input: `\`, want: `\`},
+	})
+}
+
+func TestNilEnv(t *testing.T) {
+	t.Parallel()
+
+	runInterpolateTests(t, nil, []interpolateTest{
+		{input: "$UNSET", want: ""},
+		{input: "${UNSET:-default}", want: "default"},
+		{input: "${UNSET?}", wantErr: "$UNSET: not set"},
+	})
+}
+
+func TestNestedInterpolation(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{
+		"TEST1": "A test",
+		"TEST2": "Another",
+		"TEST3": "Llamas",
+	})
+
+	runInterpolateTests(t, env, []interpolateTest{
+		{input: "${TEST5:-${TEST6:-$TEST1}}", want: "A test"},
+		{input: "${TEST5:-${TEST2:-$TEST1}}", want: "Another"},
+		{input: "${TEST5:-Some text ${TEST2:-$TEST1} with $TEST3}", want: "Some text Another with Llamas"},
+		{input: "${TEST5:-${TEST6:-${TEST7:-${TEST8:-deep}}}}", want: "deep"},
+	})
+}
+
+func TestLiteralDollarSigns(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{
+		"TEST1": "A test",
+	})
+
+	runInterpolateTests(t, env, []interpolateTest{
+		{input: "$", want: "$"},
+		{input: "trailing $", want: "trailing $"},
+		{input: "This $ is not a variable", want: "This $ is not a variable"},
+		{input: "$1 burgers", want: "$1 burgers"},
+		{input: "$99bottles", want: "$99bottles"},
+		{input: "price: $5, $TEST1", want: "price: $5, A test"},
+		{input: "SELECT * FROM t WHERE id = $1 AND name = $2", want: "SELECT * FROM t WHERE id = $1 AND name = $2"},
+		{input: "a$\tb", want: "a$\tb"},
+		{input: "$-$@$*$#$?$!", want: "$-$@$*$#$?$!"},
+		{input: "grep 'xi$'", want: "grep 'xi$'"},
+		{input: "${UNSET:-$}", want: "$"},
+		{input: "${UNSET:-$5}", want: "$5"},
+		{input: "$é", want: "$é"},
+		{input: "$(echo hello world)", want: "$(echo hello world)"},
+		{input: "testing $(echo $TEST1)", want: "testing $(echo A test)"},
+		{input: "$(", want: "$("},
+	})
+}
+
+func TestUnderscoreIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{
+		"_":       "underscore",
+		"_TEST":   "leading",
+		"TEST_1_": "trailing",
+	})
+
+	runInterpolateTests(t, env, []interpolateTest{
+		{input: "$_", want: "underscore"},
+		{input: "${_}", want: "underscore"},
+		{input: "$_TEST", want: "leading"},
+		{input: "${_TEST}", want: "leading"},
+		{input: "$TEST_1_", want: "trailing"},
+		{input: "${_UNSET:-default}", want: "default"},
+	})
+}
+
+func TestParseErrors(t *testing.T) {
+	t.Parallel()
+
+	runInterpolateTests(t, nil, []interpolateTest{
+		{input: "${", wantErr: "expected identifier to start with a letter or underscore, got end of input"},
+		{input: "${}", wantErr: "expected identifier to start with a letter or underscore, got '}'"},
+		{input: "${1}", wantErr: "expected identifier to start with a letter or underscore, got '1'"},
+		{input: "${é}", wantErr: "expected identifier to start with a letter or underscore, got 'é'"},
+		{input: "${FOO", wantErr: "expected an operator, got end of input"},
+		{input: "${FOO!}", wantErr: "expected an operator, got '!'"},
+		{input: "${FOO=bar}", wantErr: "expected an operator, got '='"},
+		{input: "${FOO:=bar}", wantErr: `parse substring offset: strconv.Atoi: parsing "=bar": invalid syntax`},
+		{input: "${FOO:-bar", wantErr: "expected brace expansion to end with }, got end of input"},
+		{input: "${FOO:-${BAR}", wantErr: "expected brace expansion to end with }, got end of input"},
+		{input: "${#}", wantErr: "expected identifier to start with a letter or underscore, got '}'"},
+		{input: "${#FOO", wantErr: "expected length expansion to end with }, got end of input"},
+		{input: "${#FOO:-x}", wantErr: "expected length expansion to end with }, got ':'"},
+		{input: "${FOO:}", wantErr: "expected substring offset, got '}'"},
+		{input: "${FOO:1", wantErr: "expected brace expansion to end with }, got end of input"},
+		{input: "${FOO:1:2", wantErr: "expected brace expansion to end with }, got end of input"},
+		{input: "${FOO:x}", wantErr: `parse substring offset: strconv.Atoi: parsing "x": invalid syntax`},
+		{input: "${FOO:1:x}", wantErr: `parse substring length: strconv.Atoi: parsing "x": invalid syntax`},
+		{input: "${FOO:1:2:3}", wantErr: `parse substring length: strconv.Atoi: parsing "2:3": invalid syntax`},
+		{input: "${FOO:99999999999999999999}", wantErr: `parse substring offset: strconv.Atoi: parsing "99999999999999999999": value out of range`},
+	})
+}
+
+func TestMissingParameterValuesReturnEmptyStrings(t *testing.T) {
+	t.Parallel()
+
+	runInterpolateTests(t, nil, []interpolateTest{
+		{input: "$BUILDKITE_COMMIT", want: ""},
+		{input: "${BUILDKITE_COMMIT}", want: ""},
+		{input: "${BUILDKITE_COMMIT:0:7}", want: ""},
+		{input: "${BUILDKITE_COMMIT:7}", want: ""},
+		{input: "${BUILDKITE_COMMIT:7:14}", want: ""},
+		{input: "${BUILDKITE_COMMIT: -7:-1}", want: ""},
+	})
+}
+
+func TestSubstringsWithOffsets(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{
+		"BUILDKITE_COMMIT": "1adf998e39f647b4b25842f107c6ed9d30a3a7c7",
+	})
+
+	runInterpolateTests(t, env, []interpolateTest{
+		// in range offsets, no lengths
+		{input: "${BUILDKITE_COMMIT:0}", want: "1adf998e39f647b4b25842f107c6ed9d30a3a7c7"},
+		{input: "${BUILDKITE_COMMIT:7}", want: "e39f647b4b25842f107c6ed9d30a3a7c7"},
+		{input: "${BUILDKITE_COMMIT: -7}", want: "0a3a7c7"},
+		{input: "${BUILDKITE_COMMIT:+7}", want: "7"}, // ":+" is an alternate value, not an offset
+		{input: "${BUILDKITE_COMMIT: +7}", want: "e39f647b4b25842f107c6ed9d30a3a7c7"},
+
+		// out of range offsets, no lengths
+		{input: "${BUILDKITE_COMMIT: -128}", want: "1adf998e39f647b4b25842f107c6ed9d30a3a7c7"},
+		{input: "${BUILDKITE_COMMIT:128}", want: ""},
+
+		// in range offsets and lengths
+		{input: "${BUILDKITE_COMMIT:0:7}", want: "1adf998"},
+		{input: "${BUILDKITE_COMMIT:7:7}", want: "e39f647"},
+		{input: "${BUILDKITE_COMMIT:7:-7}", want: "e39f647b4b25842f107c6ed9d3"},
+		{input: "${BUILDKITE_COMMIT: -7:3}", want: "0a3"},
+		{input: "${BUILDKITE_COMMIT: -7:-3}", want: "0a3a"},
+
+		// zero lengths
+		{input: "${BUILDKITE_COMMIT:0:0}", want: ""},
+		{input: "${BUILDKITE_COMMIT:7:0}", want: ""},
+
+		// in range offsets and out of range lengths
+		{input: "${BUILDKITE_COMMIT:0:128}", want: "1adf998e39f647b4b25842f107c6ed9d30a3a7c7"},
+		{input: "${BUILDKITE_COMMIT:7:128}", want: "e39f647b4b25842f107c6ed9d30a3a7c7"},
+		{input: "${BUILDKITE_COMMIT:0:-128}", want: ""},
+		{input: "${BUILDKITE_COMMIT:7:-128}", want: ""},
+
+		// empty or blank offsets and lengths count as 0, the same as bash
+		{input: "${BUILDKITE_COMMIT: }", want: "1adf998e39f647b4b25842f107c6ed9d30a3a7c7"},
+		{input: "${BUILDKITE_COMMIT::7}", want: "1adf998"},
+		{input: "${BUILDKITE_COMMIT:7:}", want: ""},
+		{input: "${BUILDKITE_COMMIT:7: }", want: ""},
+		{input: "${BUILDKITE_COMMIT: 7 : 3 }", want: "e39"},
+
+		// extreme values must not overflow
+		{input: "${BUILDKITE_COMMIT:1:9223372036854775807}", want: "adf998e39f647b4b25842f107c6ed9d30a3a7c7"},
+		{input: "${BUILDKITE_COMMIT:9223372036854775807:9223372036854775807}", want: ""},
+		{input: "${BUILDKITE_COMMIT: -9223372036854775808:1}", want: "1"},
+		{input: "${BUILDKITE_COMMIT:1:-9223372036854775808}", want: ""},
+	})
+}
+
+func TestSubstringsWithMultibyteCharacters(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{"GREETING": "héllo wörld 🦀"})
+
+	runInterpolateTests(t, env, []interpolateTest{
+		{input: "${GREETING:1}", want: "éllo wörld 🦀"},
+		{input: "${GREETING:2}", want: "llo wörld 🦀"},
+		{input: "${GREETING:1:3}", want: "éll"},
+		{input: "${GREETING: -1}", want: "🦀"},
+		{input: "${GREETING: -7:5}", want: "wörld"},
+		{input: "${GREETING:6:-2}", want: "wörld"},
+	})
+}
+
+func TestInvalidUTF8IsPreserved(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{"TEST1": "A test"})
+
+	runInterpolateTests(t, env, []interpolateTest{
+		{input: "bad\xffbyte", want: "bad\xffbyte"},
+		{input: "\xfe\xff", want: "\xfe\xff"},
+		{input: "$TEST1\xff", want: "A test\xff"},
+		{input: "${UNSET:-\xff}", want: "\xff"},
+		{input: "$\xff", want: "$\xff"},
+		{input: "valid � stays", want: "valid � stays"},
+	})
+}
+
+func TestInterpolateIsntGreedy(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{
+		"BUILDKITE_COMMIT":       "cfeeee3fa7fa1a6311723f5cbff95b738ec6e683",
+		"BUILDKITE_PARALLEL_JOB": "456",
+	})
+
+	runInterpolateTests(t, env, []interpolateTest{
+		{input: `echo "ENV_1=test_$BUILDKITE_COMMIT_$BUILDKITE_PARALLEL_JOB"`, want: `echo "ENV_1=test_456"`},
+		{input: `echo "ENV_1=test-$BUILDKITE_COMMIT-$BUILDKITE_PARALLEL_JOB"`, want: `echo "ENV_1=test-cfeeee3fa7fa1a6311723f5cbff95b738ec6e683-456"`},
+		{input: `echo "ENV_1=test_${BUILDKITE_COMMIT}_${BUILDKITE_PARALLEL_JOB}"`, want: `echo "ENV_1=test_cfeeee3fa7fa1a6311723f5cbff95b738ec6e683_456"`},
+	})
+}
+
+func TestDefaultValues(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{
+		"DAY":       "Blarghday",
+		"EMPTY_DAY": "",
+	})
+
+	runInterpolateTests(t, env, []interpolateTest{
+		{input: "Today is ${TODAY-Tuesday}", want: "Today is Tuesday"},
+		{input: "Tomorrow is ${TOMORROW-Wednesday}", want: "Tomorrow is Wednesday"},
+		{input: "Today is ${DAY-Wednesday}", want: "Today is Blarghday"},
+		{input: "Today is ${DAY:-Wednesday}", want: "Today is Blarghday"},
+		{input: "Today is ${EMPTY_DAY-Wednesday}", want: "Today is "},
+		{input: "Today is ${EMPTY_DAY:-Wednesday}", want: "Today is Wednesday"},
+		{input: "${EMPTY_DAY:--:{}}", want: "-:{}"},
+		{input: "${EMPTY:-${LLAMAS-test}}", want: "test"},
+		{input: "${EMPTY:-127}", want: "127"},
+		{input: "${EMPTY:-}", want: ""},
+		{input: "${EMPTY-}", want: ""},
+		{input: "${DAY:-${UNSET?not evaluated}}", want: "Blarghday"},
+	})
+}
+
+func TestRequiredVariables(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{
 		"SET":   "value",
 		"EMPTY": "",
 		"NAME":  "llamas",
 	})
 
-	for _, tc := range []struct {
-		input string
-		want  string
-	}{
+	runInterpolateTests(t, env, []interpolateTest{
+		{input: "Hello ${REQUIRED_VAR?}", wantErr: "$REQUIRED_VAR: not set"},
+		{input: "Hello ${REQUIRED_VAR?y u no set me? :-{}", wantErr: "$REQUIRED_VAR: y u no set me? :-{"},
+		{input: "Hello ${REQUIRED_VAR?{}}", wantErr: "$REQUIRED_VAR: {"},
+		{input: "${REQUIRED_VAR?missing $NAME}", wantErr: "$REQUIRED_VAR: missing llamas"},
+		{input: "${SET?}", want: "value"},
+		{input: "${EMPTY?}", want: ""},
+		{input: "${SET:?}", want: "value"},
+		{input: "${EMPTY:?}", wantErr: "$EMPTY: empty or not set"},
+		{input: "${REQUIRED_VAR:?}", wantErr: "$REQUIRED_VAR: empty or not set"},
+		{input: "${EMPTY:?must be set}", wantErr: "$EMPTY: must be set"},
+		{input: "${EMPTY:?${UNSET:-fallback} message}", wantErr: "$EMPTY: fallback message"},
+		{input: "${UNSET:-${EMPTY:?inner}}", wantErr: "$EMPTY: inner"},
+		{input: "${UNSET?${OTHER?message error wins}}", wantErr: "$OTHER: message error wins"},
+		{input: "$SET ${UNSET?first} ${UNSET2?second}", wantErr: "$UNSET: first"},
+	})
+}
+
+func TestAlternateValues(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{
+		"SET":   "value",
+		"EMPTY": "",
+		"NAME":  "llamas",
+	})
+
+	runInterpolateTests(t, env, []interpolateTest{
 		{input: "${SET+alt}", want: "alt"},
 		{input: "${EMPTY+alt}", want: "alt"},
 		{input: "${UNSET+alt}", want: ""},
@@ -487,108 +392,89 @@ func TestAlternateValues(t *testing.T) {
 		{input: "${SET:+--name=$NAME}", want: "--name=llamas"},
 		{input: "${SET:+${UNSET:-nested}}", want: "nested"},
 		{input: "${UNSET:+${UNSET2:?not evaluated}}", want: ""},
-	} {
-		tc := tc
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := interpolate.Interpolate(environ, tc.input)
-			if err != nil {
-				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
-			}
-			if got != tc.want {
-				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
-			}
-		})
-	}
+	})
 }
 
 func TestLength(t *testing.T) {
 	t.Parallel()
 
-	environ := interpolate.NewMapEnv(map[string]string{
+	env := interpolate.NewMapEnv(map[string]string{
 		"SET":       "value",
 		"EMPTY":     "",
 		"MULTIBYTE": "héllo 🦀",
 	})
 
-	for _, tc := range []struct {
-		input string
-		want  string
-	}{
+	runInterpolateTests(t, env, []interpolateTest{
 		{input: "${#SET}", want: "5"},
 		{input: "${#EMPTY}", want: "0"},
 		{input: "${#UNSET}", want: "0"},
 		{input: "${#MULTIBYTE}", want: "7"},
 		{input: "${UNSET:-${#SET}}", want: "5"},
 		{input: "$#SET", want: "$#SET"},
-	} {
-		tc := tc
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := interpolate.Interpolate(environ, tc.input)
-			if err != nil {
-				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
-			}
-			if got != tc.want {
-				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
-			}
-		})
-	}
+	})
 }
 
 func TestEscapingVariables(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range []struct {
-		Str      string
-		Expected string
-	}{
-		{`Do this $$ESCAPE_PARTY`, `Do this $ESCAPE_PARTY`},
-		{`Do this \$ESCAPE_PARTY`, `Do this $ESCAPE_PARTY`},
-		{`Do this $${SUCH_ESCAPE}`, `Do this ${SUCH_ESCAPE}`},
-		{`Do this \${SUCH_ESCAPE}`, `Do this ${SUCH_ESCAPE}`},
-		{`Do this $${SUCH_ESCAPE:-$OTHERWISE}`, `Do this ${SUCH_ESCAPE:-}`},
-		{`Do this \${SUCH_ESCAPE:-$OTHERWISE}`, `Do this ${SUCH_ESCAPE:-}`},
-		{`Do this $${SUCH_ESCAPE:-$$OTHERWISE}`, `Do this ${SUCH_ESCAPE:-$OTHERWISE}`},
-		{`Do this \${SUCH_ESCAPE:-\$OTHERWISE}`, `Do this ${SUCH_ESCAPE:-$OTHERWISE}`},
-		{`echo "my favourite mountain is cotopaxi" | grep 'xi$$'`, `echo "my favourite mountain is cotopaxi" | grep 'xi$'`},
-		{`$${not actually a brace expression`, `${not actually a brace expression`},
-	} {
-		result, err := interpolate.Interpolate(nil, tc.Str)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result != tc.Expected {
-			t.Fatalf("Test %q failed: Expected substring %q, got %q", tc.Str, tc.Expected, result)
-		}
-	}
+	runInterpolateTests(t, nil, []interpolateTest{
+		{input: "Do this $$ESCAPE_PARTY", want: "Do this $ESCAPE_PARTY"},
+		{input: `Do this \$ESCAPE_PARTY`, want: "Do this $ESCAPE_PARTY"},
+		{input: "Do this $${SUCH_ESCAPE}", want: "Do this ${SUCH_ESCAPE}"},
+		{input: `Do this \${SUCH_ESCAPE}`, want: "Do this ${SUCH_ESCAPE}"},
+		{input: "Do this $${SUCH_ESCAPE:-$OTHERWISE}", want: "Do this ${SUCH_ESCAPE:-}"},
+		{input: `Do this \${SUCH_ESCAPE:-$OTHERWISE}`, want: "Do this ${SUCH_ESCAPE:-}"},
+		{input: "Do this $${SUCH_ESCAPE:-$$OTHERWISE}", want: "Do this ${SUCH_ESCAPE:-$OTHERWISE}"},
+		{input: `Do this \${SUCH_ESCAPE:-\$OTHERWISE}`, want: "Do this ${SUCH_ESCAPE:-$OTHERWISE}"},
+		{input: `echo "my favourite mountain is cotopaxi" | grep 'xi$$'`, want: `echo "my favourite mountain is cotopaxi" | grep 'xi$'`},
+		{input: "$${not actually a brace expression", want: "${not actually a brace expression"},
+		{input: "$$$$", want: "$$"},
+		{input: "$$$", want: "$$"},
+		{input: `\\$UNSET`, want: `\\`},
+		{input: `\\\$UNSET`, want: `\\$UNSET`},
+		{input: "${UNSET:-$$}", want: "$"},
+		{input: `${UNSET:-\}}`, want: `\}`},
+	})
 }
 
 func TestExtractingIdentifiers(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		Str         string
-		Identifiers []string
+		input string
+		want  []string
 	}{
-		{`Hello ${REQUIRED_VAR?}`, []string{`REQUIRED_VAR`}},
-		{`${LLAMAS:-${ROCK:-true}}`, []string{`LLAMAS`, `ROCK`}},
-		{`${BUILDKITE_COMMIT:0}`, []string{`BUILDKITE_COMMIT`}},
-		{`${UNSET-$DEFAULT}`, []string{`UNSET`, `DEFAULT`}},
-		{`${REQUIRED?missing $NAME}`, []string{`REQUIRED`, `NAME`}},
-		{`${A:?$B} ${C+$D} ${E:+$F} ${#G}`, []string{`A`, `B`, `C`, `D`, `E`, `F`, `G`}},
-		{`This $ is not a variable`, []string{}},
-		{`$1 and $_UNDERSCORE`, []string{`_UNDERSCORE`}},
+		{input: "", want: []string{}},
+		{input: "Hello ${REQUIRED_VAR?}", want: []string{"REQUIRED_VAR"}},
+		{input: "${LLAMAS:-${ROCK:-true}}", want: []string{"LLAMAS", "ROCK"}},
+		{input: "${BUILDKITE_COMMIT:0}", want: []string{"BUILDKITE_COMMIT"}},
+		{input: "${UNSET-$DEFAULT}", want: []string{"UNSET", "DEFAULT"}},
+		{input: "${REQUIRED?missing $NAME}", want: []string{"REQUIRED", "NAME"}},
+		{input: "${A:?$B} ${C+$D} ${E:+$F} ${#G}", want: []string{"A", "B", "C", "D", "E", "F", "G"}},
+		{input: "This $ is not a variable", want: []string{}},
+		{input: "$1 and $_UNDERSCORE", want: []string{"_UNDERSCORE"}},
+		{input: "$$ESCAPED and $NOT_ESCAPED", want: []string{"NOT_ESCAPED"}},
+		{input: "$A $A ${A}", want: []string{"A", "A", "A"}},
 	} {
-		id, err := interpolate.Identifiers(tc.Str)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(id, tc.Identifiers) {
-			t.Fatalf("Test %q should have identifiers %v, got %v", tc.Str, tc.Identifiers, id)
-		}
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := interpolate.Identifiers(tc.input)
+			if err != nil {
+				t.Fatalf("Identifiers(%q) error = %v", tc.input, err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("Identifiers(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIdentifiersParseError(t *testing.T) {
+	t.Parallel()
+
+	if _, err := interpolate.Identifiers("${FOO"); err == nil {
+		t.Error(`Identifiers("${FOO") error = nil, want error`)
 	}
 }
 
@@ -598,8 +484,18 @@ func BenchmarkBasicInterpolate(b *testing.B) {
 	})
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		_, _ = interpolate.Interpolate(env, "Buildkite... ${HELLO_WORLD} ${ANOTHER_VAR:-🏖}")
+	}
+}
+
+func BenchmarkSubstring(b *testing.B) {
+	env := interpolate.NewMapEnv(map[string]string{
+		"COMMIT": "1adf998e39f647b4b25842f107c6ed9d30a3a7c7",
+	})
+
+	b.ReportAllocs()
+	for b.Loop() {
+		_, _ = interpolate.Interpolate(env, "${COMMIT:0:7}")
 	}
 }

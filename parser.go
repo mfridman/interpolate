@@ -228,12 +228,19 @@ func (p *Parser) parseSubstringExpansion(identifier string) (Expansion, error) {
 		return r == ':' || r == '}'
 	})
 
-	offsetInt, err := strconv.Atoi(strings.TrimSpace(offset))
+	// Bash rejects ${VAR:}, but treats a blank offset as 0 when it is followed by a length, as in
+	// ${VAR::2}, or when it has only spaces, as in ${VAR: }.
+	hasLength := p.peekRune() == ':'
+	if offset == "" && !hasLength {
+		return nil, fmt.Errorf("expected substring offset, got %s", describeRune(p.peekRune()))
+	}
+
+	offsetInt, err := parseSubstringNumber(offset)
 	if err != nil {
 		return nil, fmt.Errorf("parse substring offset: %w", err)
 	}
 
-	if c := p.peekRune(); c == '}' {
+	if !hasLength {
 		return SubstringExpansion{Identifier: identifier, Offset: offsetInt}, nil
 	}
 
@@ -242,12 +249,21 @@ func (p *Parser) parseSubstringExpansion(identifier string) (Expansion, error) {
 		return r == '}'
 	})
 
-	lengthInt, err := strconv.Atoi(strings.TrimSpace(length))
+	lengthInt, err := parseSubstringNumber(length)
 	if err != nil {
 		return nil, fmt.Errorf("parse substring length: %w", err)
 	}
 
 	return SubstringExpansion{Identifier: identifier, Offset: offsetInt, Length: lengthInt, HasLength: true}, nil
+}
+
+// parseSubstringNumber parses a substring offset or length. A blank value is 0, the same as bash.
+func parseSubstringNumber(value string) (int, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	return strconv.Atoi(value)
 }
 
 func (p *Parser) scanUntil(f func(rune) bool) string {

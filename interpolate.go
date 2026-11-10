@@ -88,7 +88,8 @@ func (e UnsetValueExpansion) Expand(env Env) (string, error) {
 	return val, nil
 }
 
-// SubstringExpansion returns a substring (or slice) of the env
+// SubstringExpansion returns a substring (or slice) of the env. This is ${VAR:offset} or
+// ${VAR:offset:length}.
 type SubstringExpansion struct {
 	Identifier string
 	Offset     int
@@ -103,50 +104,31 @@ func (e SubstringExpansion) Identifiers() []string {
 func (e SubstringExpansion) Expand(env Env) (string, error) {
 	value, _ := env.Get(e.Identifier)
 	// Offsets and lengths count characters, not bytes, the same as bash in a UTF-8 locale.
-	val := []rune(value)
+	runes := []rune(value)
+	size := len(runes)
 
+	// A negative offset counts from the end. Clamp the offset to the bounds of the value. The
+	// order of operations prevents integer overflow for extreme offsets and lengths.
 	from := e.Offset
-
-	// Negative offsets = from end
 	if from < 0 {
-		from += len(val)
+		from = max(size+from, 0)
 	}
-
-	// Still negative = too far from end? Truncate to start.
-	if from < 0 {
-		from = 0
-	}
-
-	// Beyond end? Truncate to end.
-	if from > len(val) {
-		from = len(val)
-	}
+	from = min(from, size)
 
 	if !e.HasLength {
-		return string(val[from:]), nil
+		return string(runes[from:]), nil
 	}
 
-	to := e.Length
-
-	if to >= 0 {
-		// Positive length = from offset
-		to += from
+	// A positive length counts from the offset. A negative length counts back from the end, and
+	// cannot go before the offset.
+	var to int
+	if e.Length >= 0 {
+		to = from + min(e.Length, size-from)
 	} else {
-		// Negative length = from end
-		to += len(val)
-
-		// Too far? Truncate to offset.
-		if to < from {
-			to = from
-		}
+		to = max(size+e.Length, from)
 	}
 
-	// Beyond end? Truncate to end.
-	if to > len(val) {
-		to = len(val)
-	}
-
-	return string(val[from:to]), nil
+	return string(runes[from:to]), nil
 }
 
 // RequiredExpansion returns an env value, or an error if it is unset. This is ${VAR?message}.
