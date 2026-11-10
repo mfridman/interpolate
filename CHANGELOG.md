@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- `${VAR:?message}`: error if `VAR` is unset or empty.
+- `${VAR:?message}`: error if `VAR` is unset or empty ([#2](https://github.com/mfridman/interpolate/issues/2)).
 - `${VAR+word}` and `${VAR:+word}`: use `word` if `VAR` is set, or set and not empty.
 - `${#VAR}`: the length of the value in characters.
 - `\}` in the word of a brace expansion is a literal `}`, for example `${CONFIG:-{"a":1\}}`.
@@ -25,7 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A negative substring offset before the start of the value gives an empty string, the same as bash. Before, it gave the whole value.
 - A blank substring offset or length counts as 0, so `${VAR::2}`, `${VAR:2:}`, and `${VAR: }` work. Before, they returned an error.
 - `Identifiers` includes the names in the word of `${VAR-word}` and `${VAR?word}`, the same as `${VAR:-word}`.
-- Error messages start with a lowercase letter, and say "end of input" for unterminated expansions. The `$VAR: message` errors from required expansions are unchanged.
+- Error messages start with a lowercase letter, and say "end of input" for unterminated expansions. An empty `${}` gives `empty expansion ${}, expected a variable name` ([#1](https://github.com/mfridman/interpolate/issues/1)). The `$VAR: message` errors from required expansions are unchanged.
 
 ### Fixed
 

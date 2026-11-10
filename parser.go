@@ -1,6 +1,7 @@
 package interpolate
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -152,6 +153,10 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 	defer func() { p.depth-- }()
 	if p.depth > maxNestingDepth {
 		return nil, fmt.Errorf("brace expansions nested deeper than %d levels", maxNestingDepth)
+	}
+
+	if c := p.peekRune(); c == '}' {
+		return nil, errors.New("empty expansion ${}, expected a variable name")
 	}
 
 	// ${#parameter} is the length of the value, so it has a prefix and no operator.

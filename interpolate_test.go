@@ -192,7 +192,10 @@ func TestParseErrors(t *testing.T) {
 
 	runInterpolateTests(t, nil, []interpolateTest{
 		{input: "${", wantErr: "expected identifier to start with a letter or underscore, got end of input"},
-		{input: "${}", wantErr: "expected identifier to start with a letter or underscore, got '}'"},
+		{input: "${}", wantErr: "empty expansion ${}, expected a variable name"},
+		{input: "text ${} text", wantErr: "empty expansion ${}, expected a variable name"},
+		{input: "${UNSET:-${}}", wantErr: "empty expansion ${}, expected a variable name"},
+		{input: "$${}", want: "${}"},
 		{input: "${1}", wantErr: "expected identifier to start with a letter or underscore, got '1'"},
 		{input: "${é}", wantErr: "expected identifier to start with a letter or underscore, got 'é'"},
 		{input: "${FOO", wantErr: "expected an operator, got end of input"},
