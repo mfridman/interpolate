@@ -8,6 +8,8 @@ import (
 )
 
 func TestParser(t *testing.T) {
+	t.Parallel()
+
 	var testCases = []struct {
 		String   string
 		Expected []interpolate.ExpressionItem

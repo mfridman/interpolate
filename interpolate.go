@@ -1,9 +1,9 @@
 package interpolate
 
 import (
-	"bytes"
 	"fmt"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -20,7 +20,7 @@ func Interpolate(env Env, str string) (string, error) {
 	return expr.Expand(env)
 }
 
-// Indentifiers parses the identifiers from any expansions in the provided string
+// Identifiers parses the identifiers from any expansions in the provided string
 func Identifiers(str string) ([]string, error) {
 	expr, err := NewParser(str).Parse()
 	if err != nil {
@@ -31,7 +31,10 @@ func Identifiers(str string) ([]string, error) {
 
 // An expansion is something that takes in ENV and returns a string or an error
 type Expansion interface {
+	// Expand expands the expansion using variables from env.
 	Expand(env Env) (string, error)
+
+	// Identifiers returns any variable names referenced within the expansion.
 	Identifiers() []string
 }
 
@@ -250,6 +253,8 @@ func requiredError(env Env, identifier string, message Expression, defaultMessag
 // Expression is a collection of either Text or Expansions
 type Expression []ExpressionItem
 
+// Identifiers returns the variable names referenced by all expansions in the expression, in
+// order. A name can occur more than once.
 func (e Expression) Identifiers() []string {
 	identifiers := []string{}
 	for _, item := range e {
@@ -260,8 +265,10 @@ func (e Expression) Identifiers() []string {
 	return identifiers
 }
 
+// Expand expands all expansions in the expression using variables from env, and joins the results
+// with the text.
 func (e Expression) Expand(env Env) (string, error) {
-	buf := &bytes.Buffer{}
+	var buf strings.Builder
 
 	for _, item := range e {
 		if item.Expansion != nil {
@@ -269,9 +276,9 @@ func (e Expression) Expand(env Env) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			_, _ = buf.WriteString(result)
+			buf.WriteString(result)
 		} else {
-			_, _ = buf.WriteString(item.Text)
+			buf.WriteString(item.Text)
 		}
 	}
 

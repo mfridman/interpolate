@@ -252,7 +252,7 @@ func (p *Parser) parseSubstringExpansion(identifier string) (Expansion, error) {
 
 func (p *Parser) scanUntil(f func(rune) bool) string {
 	start := p.pos
-	for int(p.pos) < len(p.input) {
+	for p.pos < len(p.input) {
 		c, size := utf8.DecodeRuneInString(p.input[p.pos:])
 		if f(c) {
 			break
@@ -290,7 +290,7 @@ func isIdentifierChar(r rune) bool {
 }
 
 func (p *Parser) nextRune() rune {
-	if int(p.pos) >= len(p.input) {
+	if p.pos >= len(p.input) {
 		return eof
 	}
 	c, size := utf8.DecodeRuneInString(p.input[p.pos:])
@@ -299,7 +299,7 @@ func (p *Parser) nextRune() rune {
 }
 
 func (p *Parser) peekRune() rune {
-	if int(p.pos) >= len(p.input) {
+	if p.pos >= len(p.input) {
 		return eof
 	}
 	c, _ := utf8.DecodeRuneInString(p.input[p.pos:])
