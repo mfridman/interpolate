@@ -80,7 +80,7 @@ output, err := interpolate.Expand(input, env, interpolate.WithNoUnset())
 
 - A name starts with a letter or an underscore, followed by letters, digits, or underscores (`[A-Za-z_][A-Za-z0-9_]*`).
 - A `word` or `message` can contain other expansions, such as `${NAME:-${FALLBACK:-default}}`. It is expanded only when it is used. Expansions can be nested up to 1000 levels deep.
-- Without a message, the error from `?` is `$NAME: not set`, and the error from `:?` is `$NAME: empty or not set`.
+- Without a message, or with a message that expands to an empty string, the error from `?` is `$NAME: not set`, and the error from `:?` is `$NAME: empty or not set`.
 
 ### Substrings
 
@@ -117,6 +117,10 @@ These rules matter when the input is SQL, for example in [goose](https://github.
 - Pattern removal: `${NAME%word}`, `${NAME%%word}`, `${NAME#word}`, and `${NAME##word}`.
 - Assignment: `${NAME:=word}` and `${NAME=word}`.
 - Special and positional parameters, such as `$1`, `$@`, `$*`, `$#`, and `$?`. They are kept as literal text.
+- Other shell expansions: command substitution `$(command)`, arithmetic `$((1+2))`, and `~`. They are kept as literal text.
+- Quotes. `'` and `"` are ordinary characters, so `${NAME:-"a b"}` gives `"a b"` with the quotes.
+
+The tests check more than 3,000 cases in [testdata/corpus.json](testdata/corpus.json). The expected results come from bash 5.
 
 ## Acknowledgements
 

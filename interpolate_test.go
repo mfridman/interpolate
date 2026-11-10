@@ -197,6 +197,7 @@ func TestLiteralDollarSigns(t *testing.T) {
 		{input: "$(echo hello world)", want: "$(echo hello world)"},
 		{input: "testing $(echo $TEST1)", want: "testing $(echo A test)"},
 		{input: "$(", want: "$("},
+		{input: "$((1+2)) ~ ~/x", want: "$((1+2)) ~ ~/x"},
 	})
 }
 
@@ -422,6 +423,9 @@ func TestDefaultValues(t *testing.T) {
 		{input: "${EMPTY:-127}", want: "127"},
 		{input: "${EMPTY:-}", want: ""},
 		{input: "${EMPTY-}", want: ""},
+		// Quotes are ordinary characters.
+		{input: `${UNSET:-"a b"}`, want: `"a b"`},
+		{input: `${UNSET:-'a b'} "$DAY"`, want: `'a b' "Blarghday"`},
 		{input: "${DAY:-${UNSET?not evaluated}}", want: "Blarghday"},
 	})
 }
