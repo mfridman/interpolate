@@ -93,6 +93,8 @@ A parameter name starts with a letter or an underscore, followed by letters, dig
 
   - **Literal dollar sign.** The `$` is kept as-is. For example, `$1`, `$(command)`, `price: $5`, and a trailing `$` are not changed.
 
+SQL dollar-quoted strings need escaping. `$$` becomes `$`, and the `$tag` in `$tag$` expands as a variable. Write `$$$$` for `$$` and `$$tag$$` for `$tag$`.
+
 ## Not supported
 
 - Pattern removal: `${parameter%word}`, `${parameter%%word}`, `${parameter#word}`, and `${parameter##word}`.

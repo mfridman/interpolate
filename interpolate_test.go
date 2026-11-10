@@ -461,6 +461,11 @@ func TestEscapingVariables(t *testing.T) {
 		{input: `\\$UNSET`, want: `\\`},
 		{input: `\\\$UNSET`, want: `\\$UNSET`},
 		{input: "${UNSET:-$$}", want: "$"},
+		// SQL dollar-quoted strings, as documented in the README.
+		{input: "AS $$ SELECT 1 $$", want: "AS $ SELECT 1 $"},
+		{input: "AS $body$ SELECT 1 $body$", want: "AS $ SELECT 1 $"},
+		{input: "AS $$$$ SELECT 1 $$$$", want: "AS $$ SELECT 1 $$"},
+		{input: "AS $$body$$ SELECT 1 $$body$$", want: "AS $body$ SELECT 1 $body$"},
 		{input: `${UNSET:-\}}`, want: `\}`},
 	})
 }
