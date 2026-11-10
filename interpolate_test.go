@@ -403,18 +403,124 @@ func TestDefaultValues(t *testing.T) {
 }
 
 func TestRequiredVariables(t *testing.T) {
+	t.Parallel()
+
+	environ := interpolate.NewMapEnv(map[string]string{
+		"SET":   "value",
+		"EMPTY": "",
+		"NAME":  "llamas",
+	})
+
 	for _, tc := range []struct {
-		Str         string
-		ExpectedErr string
+		input   string
+		want    string
+		wantErr string
 	}{
-		{`Hello ${REQUIRED_VAR?}`, `$REQUIRED_VAR: not set`},
-		{`Hello ${REQUIRED_VAR?y u no set me? :-{}`, `$REQUIRED_VAR: y u no set me? :-{`},
-		{`Hello ${REQUIRED_VAR?{}}`, `$REQUIRED_VAR: {`},
+		{input: `Hello ${REQUIRED_VAR?}`, wantErr: `$REQUIRED_VAR: not set`},
+		{input: `Hello ${REQUIRED_VAR?y u no set me? :-{}`, wantErr: `$REQUIRED_VAR: y u no set me? :-{`},
+		{input: `Hello ${REQUIRED_VAR?{}}`, wantErr: `$REQUIRED_VAR: {`},
+		{input: `${REQUIRED_VAR?missing $NAME}`, wantErr: `$REQUIRED_VAR: missing llamas`},
+		{input: `${SET?}`, want: `value`},
+		{input: `${EMPTY?}`, want: ``},
+		{input: `${SET:?}`, want: `value`},
+		{input: `${EMPTY:?}`, wantErr: `$EMPTY: empty or not set`},
+		{input: `${REQUIRED_VAR:?}`, wantErr: `$REQUIRED_VAR: empty or not set`},
+		{input: `${EMPTY:?must be set}`, wantErr: `$EMPTY: must be set`},
+		{input: `${EMPTY:?${UNSET:-fallback} message}`, wantErr: `$EMPTY: fallback message`},
+		{input: `${UNSET:-${EMPTY:?inner}}`, wantErr: `$EMPTY: inner`},
 	} {
-		_, err := interpolate.Interpolate(nil, tc.Str)
-		if err == nil || err.Error() != tc.ExpectedErr {
-			t.Fatalf("Test %q should have failed with error %q, got %v", tc.Str, tc.ExpectedErr, err)
-		}
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := interpolate.Interpolate(environ, tc.input)
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Errorf("Interpolate(%q) error = %v, want %q", tc.input, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAlternateValues(t *testing.T) {
+	t.Parallel()
+
+	environ := interpolate.NewMapEnv(map[string]string{
+		"SET":   "value",
+		"EMPTY": "",
+		"NAME":  "llamas",
+	})
+
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{
+		{input: "${SET+alt}", want: "alt"},
+		{input: "${EMPTY+alt}", want: "alt"},
+		{input: "${UNSET+alt}", want: ""},
+		{input: "${SET:+alt}", want: "alt"},
+		{input: "${EMPTY:+alt}", want: ""},
+		{input: "${UNSET:+alt}", want: ""},
+		{input: "${SET+}", want: ""},
+		{input: "${SET:+--name=$NAME}", want: "--name=llamas"},
+		{input: "${SET:+${UNSET:-nested}}", want: "nested"},
+		{input: "${UNSET:+${UNSET2:?not evaluated}}", want: ""},
+	} {
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := interpolate.Interpolate(environ, tc.input)
+			if err != nil {
+				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLength(t *testing.T) {
+	t.Parallel()
+
+	environ := interpolate.NewMapEnv(map[string]string{
+		"SET":       "value",
+		"EMPTY":     "",
+		"MULTIBYTE": "héllo 🦀",
+	})
+
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{
+		{input: "${#SET}", want: "5"},
+		{input: "${#EMPTY}", want: "0"},
+		{input: "${#UNSET}", want: "0"},
+		{input: "${#MULTIBYTE}", want: "7"},
+		{input: "${UNSET:-${#SET}}", want: "5"},
+		{input: "$#SET", want: "$#SET"},
+	} {
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := interpolate.Interpolate(environ, tc.input)
+			if err != nil {
+				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -454,6 +560,7 @@ func TestExtractingIdentifiers(t *testing.T) {
 		{`${BUILDKITE_COMMIT:0}`, []string{`BUILDKITE_COMMIT`}},
 		{`${UNSET-$DEFAULT}`, []string{`UNSET`, `DEFAULT`}},
 		{`${REQUIRED?missing $NAME}`, []string{`REQUIRED`, `NAME`}},
+		{`${A:?$B} ${C+$D} ${E:+$F} ${#G}`, []string{`A`, `B`, `C`, `D`, `E`, `F`, `G`}},
 		{`This $ is not a variable`, []string{}},
 		{`$1 and $_UNDERSCORE`, []string{`_UNDERSCORE`}},
 	} {

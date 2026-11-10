@@ -149,6 +149,47 @@ func TestParser(t *testing.T) {
 			},
 		},
 		{
+			String: `${HELLO_WORLD:?Required}`,
+			Expected: []interpolate.ExpressionItem{
+				{Expansion: interpolate.RequiredNonEmptyExpansion{
+					Identifier: "HELLO_WORLD",
+					Message: interpolate.Expression([]interpolate.ExpressionItem{
+						{Text: "Required"},
+					}),
+				}},
+			},
+		},
+		{
+			String: `${HELLO_WORLD+alt}`,
+			Expected: []interpolate.ExpressionItem{
+				{Expansion: interpolate.AlternateValueExpansion{
+					Identifier: "HELLO_WORLD",
+					Content: interpolate.Expression([]interpolate.ExpressionItem{
+						{Text: "alt"},
+					}),
+				}},
+			},
+		},
+		{
+			String: `${HELLO_WORLD:+alt}`,
+			Expected: []interpolate.ExpressionItem{
+				{Expansion: interpolate.AlternateNonEmptyValueExpansion{
+					Identifier: "HELLO_WORLD",
+					Content: interpolate.Expression([]interpolate.ExpressionItem{
+						{Text: "alt"},
+					}),
+				}},
+			},
+		},
+		{
+			String: `${#HELLO_WORLD}`,
+			Expected: []interpolate.ExpressionItem{
+				{Expansion: interpolate.LengthExpansion{
+					Identifier: "HELLO_WORLD",
+				}},
+			},
+		},
+		{
 			String: `$`,
 			Expected: []interpolate.ExpressionItem{
 				{Text: `$`},

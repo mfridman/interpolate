@@ -22,19 +22,23 @@ import (
 // functions and structs named the same reading the string bite by bite (peekRune and nextRune)
 
 /*
-EscapedBackslash = "\\"
-EscapedDollar    = ( "\$" | "$$")
-Identifier       = ( letter | "_" ) { letter | digit | "_" }
-Expansion        = "$" ( Identifier | Brace )
-LiteralDollar    = "$" (not followed by "{" or a letter or "_")
-Brace            = "{" Identifier [ Identifier BraceOperation ] "}"
-Text             = { EscapedBackslash | EscapedDollar | LiteralDollar | all characters except "$" }
-Expression       = { Text | Expansion }
-EmptyValue       = ":-" { Expression }
-UnsetValue       = "-" { Expression }
-Substring        = ":" number [ ":" number ]
-Required         = "?" { Expression }
-Operation        = EmptyValue | UnsetValue | Substring | Required
+EscapedBackslash  = "\\"
+EscapedDollar     = ( "\$" | "$$")
+Identifier        = ( letter | "_" ) { letter | digit | "_" }
+Expansion         = "$" ( Identifier | Brace )
+LiteralDollar     = "$" (not followed by "{" or a letter or "_")
+Brace             = "{" ( Length | Identifier [ Operation ] ) "}"
+Text              = { EscapedBackslash | EscapedDollar | LiteralDollar | all characters except "$" }
+Expression        = { Text | Expansion }
+Length            = "#" Identifier
+EmptyValue        = ":-" { Expression }
+UnsetValue        = "-" { Expression }
+Substring         = ":" number [ ":" number ]
+RequiredNonEmpty  = ":?" { Expression }
+Required          = "?" { Expression }
+AlternateNonEmpty = ":+" { Expression }
+Alternate         = "+" { Expression }
+Operation         = EmptyValue | UnsetValue | Substring | RequiredNonEmpty | Required | AlternateNonEmpty | Alternate
 */
 
 const (
@@ -131,6 +135,12 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 		return nil, fmt.Errorf("expected brace expansion to start with {, got %s", describeRune(c))
 	}
 
+	// ${#parameter} is the length of the value, so it has a prefix and no operator.
+	if c := p.peekRune(); c == '#' {
+		_ = p.nextRune()
+		return p.parseLengthExpansion()
+	}
+
 	identifier, err := p.scanIdentifier()
 	if err != nil {
 		return nil, err
@@ -141,43 +151,37 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 		return VariableExpansion{Identifier: identifier}, nil
 	}
 
-	var operator string
-	var exp Expansion
-
-	// Parse an operator, some trickery is needed to handle : vs :-
-	if op1 := p.nextRune(); op1 == ':' {
-		if op2 := p.peekRune(); op2 == '-' {
-			_ = p.nextRune()
-			operator = ":-"
-		} else {
-			operator = ":"
-		}
-	} else if op1 == '?' || op1 == '-' {
-		operator = string(op1)
-	} else {
-		return nil, fmt.Errorf("expected an operator, got %s", describeRune(op1))
+	operator, err := p.scanOperator()
+	if err != nil {
+		return nil, err
 	}
 
-	switch operator {
-	case `:-`:
-		exp, err = p.parseEmptyValueExpansion(identifier)
+	var expansion Expansion
+	if operator == ":" {
+		expansion, err = p.parseSubstringExpansion(identifier)
 		if err != nil {
 			return nil, err
 		}
-	case `-`:
-		exp, err = p.parseUnsetValueExpansion(identifier)
+	} else {
+		// All other operators take a word: an expression (text and expansions) up until the end
+		// of the brace.
+		word, err := p.parseExpression('}')
 		if err != nil {
 			return nil, err
 		}
-	case `:`:
-		exp, err = p.parseSubstringExpansion(identifier)
-		if err != nil {
-			return nil, err
-		}
-	case `?`:
-		exp, err = p.parseRequiredExpansion(identifier)
-		if err != nil {
-			return nil, err
+		switch operator {
+		case ":-":
+			expansion = EmptyValueExpansion{Identifier: identifier, Content: word}
+		case "-":
+			expansion = UnsetValueExpansion{Identifier: identifier, Content: word}
+		case ":?":
+			expansion = RequiredNonEmptyExpansion{Identifier: identifier, Message: word}
+		case "?":
+			expansion = RequiredExpansion{Identifier: identifier, Message: word}
+		case ":+":
+			expansion = AlternateNonEmptyValueExpansion{Identifier: identifier, Content: word}
+		case "+":
+			expansion = AlternateValueExpansion{Identifier: identifier, Content: word}
 		}
 	}
 
@@ -185,26 +189,38 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 		return nil, fmt.Errorf("expected brace expansion to end with }, got %s", describeRune(c))
 	}
 
-	return exp, nil
+	return expansion, nil
 }
 
-func (p *Parser) parseEmptyValueExpansion(identifier string) (Expansion, error) {
-	// parse an expression (text and expansions) up until the end of the brace
-	expr, err := p.parseExpression('}')
+// scanOperator scans the operator after the identifier in a brace expansion. A colon on its own
+// is a substring operator. A colon followed by "-", "?" or "+" also treats an empty value as
+// unset.
+func (p *Parser) scanOperator() (string, error) {
+	switch op1 := p.nextRune(); op1 {
+	case ':':
+		if op2 := p.peekRune(); op2 == '-' || op2 == '?' || op2 == '+' {
+			_ = p.nextRune()
+			return string([]rune{op1, op2}), nil
+		}
+		return ":", nil
+	case '-', '?', '+':
+		return string(op1), nil
+	default:
+		return "", fmt.Errorf("expected an operator, got %s", describeRune(op1))
+	}
+}
+
+func (p *Parser) parseLengthExpansion() (Expansion, error) {
+	identifier, err := p.scanIdentifier()
 	if err != nil {
 		return nil, err
 	}
 
-	return EmptyValueExpansion{Identifier: identifier, Content: expr}, nil
-}
-
-func (p *Parser) parseUnsetValueExpansion(identifier string) (Expansion, error) {
-	expr, err := p.parseExpression('}')
-	if err != nil {
-		return nil, err
+	if c := p.nextRune(); c != '}' {
+		return nil, fmt.Errorf("expected length expansion to end with }, got %s", describeRune(c))
 	}
 
-	return UnsetValueExpansion{Identifier: identifier, Content: expr}, nil
+	return LengthExpansion{Identifier: identifier}, nil
 }
 
 func (p *Parser) parseSubstringExpansion(identifier string) (Expansion, error) {
@@ -232,15 +248,6 @@ func (p *Parser) parseSubstringExpansion(identifier string) (Expansion, error) {
 	}
 
 	return SubstringExpansion{Identifier: identifier, Offset: offsetInt, Length: lengthInt, HasLength: true}, nil
-}
-
-func (p *Parser) parseRequiredExpansion(identifier string) (Expansion, error) {
-	expr, err := p.parseExpression('}')
-	if err != nil {
-		return nil, err
-	}
-
-	return RequiredExpansion{Identifier: identifier, Message: expr}, nil
 }
 
 func (p *Parser) scanUntil(f func(rune) bool) string {

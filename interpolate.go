@@ -3,6 +3,8 @@ package interpolate
 import (
 	"bytes"
 	"fmt"
+	"strconv"
+	"unicode/utf8"
 )
 
 // Interpolate takes a set of environment and interpolates it into the provided string using shell
@@ -144,7 +146,7 @@ func (e SubstringExpansion) Expand(env Env) (string, error) {
 	return string(val[from:to]), nil
 }
 
-// RequiredExpansion returns an env value, or an error if it is unset
+// RequiredExpansion returns an env value, or an error if it is unset. This is ${VAR?message}.
 type RequiredExpansion struct {
 	Identifier string
 	Message    Expression
@@ -157,16 +159,92 @@ func (e RequiredExpansion) Identifiers() []string {
 func (e RequiredExpansion) Expand(env Env) (string, error) {
 	val, ok := env.Get(e.Identifier)
 	if !ok {
-		msg, err := e.Message.Expand(env)
-		if err != nil {
-			return "", err
-		}
-		if msg == "" {
-			msg = "not set"
-		}
-		return "", fmt.Errorf("$%s: %s", e.Identifier, msg)
+		return "", requiredError(env, e.Identifier, e.Message, "not set")
 	}
 	return val, nil
+}
+
+// RequiredNonEmptyExpansion returns an env value, or an error if it is unset or empty. This is
+// ${VAR:?message}.
+type RequiredNonEmptyExpansion struct {
+	Identifier string
+	Message    Expression
+}
+
+func (e RequiredNonEmptyExpansion) Identifiers() []string {
+	return append([]string{e.Identifier}, e.Message.Identifiers()...)
+}
+
+func (e RequiredNonEmptyExpansion) Expand(env Env) (string, error) {
+	val, _ := env.Get(e.Identifier)
+	if val == "" {
+		return "", requiredError(env, e.Identifier, e.Message, "empty or not set")
+	}
+	return val, nil
+}
+
+// AlternateValueExpansion returns the expansion of Content if the env is set, and an empty string
+// otherwise. This is ${VAR+word}.
+type AlternateValueExpansion struct {
+	Identifier string
+	Content    Expression
+}
+
+func (e AlternateValueExpansion) Identifiers() []string {
+	return append([]string{e.Identifier}, e.Content.Identifiers()...)
+}
+
+func (e AlternateValueExpansion) Expand(env Env) (string, error) {
+	if _, ok := env.Get(e.Identifier); !ok {
+		return "", nil
+	}
+	return e.Content.Expand(env)
+}
+
+// AlternateNonEmptyValueExpansion returns the expansion of Content if the env is set and not
+// empty, and an empty string otherwise. This is ${VAR:+word}.
+type AlternateNonEmptyValueExpansion struct {
+	Identifier string
+	Content    Expression
+}
+
+func (e AlternateNonEmptyValueExpansion) Identifiers() []string {
+	return append([]string{e.Identifier}, e.Content.Identifiers()...)
+}
+
+func (e AlternateNonEmptyValueExpansion) Expand(env Env) (string, error) {
+	if val, _ := env.Get(e.Identifier); val == "" {
+		return "", nil
+	}
+	return e.Content.Expand(env)
+}
+
+// LengthExpansion returns the number of characters in an env value, or 0 if it is unset. This is
+// ${#VAR}.
+type LengthExpansion struct {
+	Identifier string
+}
+
+func (e LengthExpansion) Identifiers() []string {
+	return []string{e.Identifier}
+}
+
+func (e LengthExpansion) Expand(env Env) (string, error) {
+	val, _ := env.Get(e.Identifier)
+	return strconv.Itoa(utf8.RuneCountInString(val)), nil
+}
+
+// requiredError returns the error for a required expansion. It uses the expansion of message, or
+// defaultMessage if message expands to an empty string.
+func requiredError(env Env, identifier string, message Expression, defaultMessage string) error {
+	msg, err := message.Expand(env)
+	if err != nil {
+		return err
+	}
+	if msg == "" {
+		msg = defaultMessage
+	}
+	return fmt.Errorf("$%s: %s", identifier, msg)
 }
 
 // Expression is a collection of either Text or Expansions
