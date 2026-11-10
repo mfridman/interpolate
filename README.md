@@ -28,7 +28,7 @@ import (
 func main() {
 	env := interpolate.NewSliceEnv([]string{"NAME=James"})
 
-	output, err := interpolate.Interpolate(env, "Hello ${NAME}, welcome to the ${PLACE:-🏖}")
+	output, err := interpolate.Expand("Hello ${NAME}, welcome to the ${PLACE:-🏖}", env)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -36,7 +36,17 @@ func main() {
 }
 ```
 
-Use `interpolate.NewSliceEnv(os.Environ())` to read from the process environment, or `interpolate.NewMapEnv` for a map. `interpolate.Identifiers` returns the variable names in a string without expanding it.
+Values come from an `Env`:
+
+- `interpolate.NewSliceEnv(os.Environ())` reads the process environment, or any `NAME=value` pairs.
+- `interpolate.NewMapEnv(m)` reads a `map[string]string`.
+- Any type with a `Get(key string) (string, bool)` method is an `Env`.
+
+`interpolate.Variables` returns the names of the variables in a string, without repeats, and does not expand it.
+
+### Errors
+
+`${NAME?message}` and `${NAME:?message}` return an error with the text `$NAME: message`.
 
 ## Supported expansions
 
@@ -55,7 +65,7 @@ Use `interpolate.NewSliceEnv(os.Environ())` to read from the process environment
 
 - A name starts with a letter or an underscore, followed by letters, digits, or underscores (`[A-Za-z_][A-Za-z0-9_]*`).
 - A `word` or `message` can contain other expansions, such as `${NAME:-${FALLBACK:-default}}`. It is expanded only when it is used. Expansions can be nested up to 1000 levels deep.
-- The error from `?` and `:?` is `$NAME: message`. Without a message, it is `$NAME: not set` or `$NAME: empty or not set`.
+- Without a message, the error from `?` is `$NAME: not set`, and the error from `:?` is `$NAME: empty or not set`.
 
 ### Substrings
 

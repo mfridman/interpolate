@@ -6,9 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `Interpolate(env, s)` is now `Expand(s, env)`.
+- `Identifiers` is now `Variables`, and returns each name only once, in the order of first use.
+
 ### Removed
 
-- The exported parser and expression types, such as `Parser`, `NewParser`, `Expression`, `ExpressionItem`, `Expansion`, and the `*Expansion` types. Use `Interpolate` and `Identifiers`.
+- The exported parser and expression types, such as `Parser`, `NewParser`, `Expression`, `ExpressionItem`, `Expansion`, and the `*Expansion` types. Use `Expand` and `Variables`.
 
 ## [v0.1.0] - 2026-11-10
 

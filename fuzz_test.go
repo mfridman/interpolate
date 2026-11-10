@@ -12,7 +12,7 @@ import (
 
 var posixNameRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-func FuzzInterpolate(f *testing.F) {
+func FuzzExpand(f *testing.F) {
 	for _, seed := range []string{
 		"",
 		"plain text",
@@ -40,32 +40,32 @@ func FuzzInterpolate(f *testing.F) {
 	})
 
 	f.Fuzz(func(t *testing.T, input string) {
-		got, err := interpolate.Interpolate(env, input)
+		got, err := interpolate.Expand(input, env)
 
-		// Identifiers fails exactly when the input does not parse.
-		identifiers, parseErr := interpolate.Identifiers(input)
+		// Variables fails exactly when the input does not parse.
+		names, parseErr := interpolate.Variables(input)
 		if parseErr != nil && err == nil {
-			t.Fatalf("Parse error = %v, but Interpolate succeeded", parseErr)
+			t.Fatalf("Parse error = %v, but Expand succeeded", parseErr)
 		}
-		for _, identifier := range identifiers {
-			if !posixNameRegexp.MatchString(identifier) {
-				t.Errorf("Identifiers(%q) returned invalid name %q", input, identifier)
+		for _, name := range names {
+			if !posixNameRegexp.MatchString(name) {
+				t.Errorf("Variables(%q) returned invalid name %q", input, name)
 			}
 		}
 
 		// Without a dollar sign there is nothing to expand, so the input must not change.
 		if !strings.Contains(input, "$") {
 			if err != nil {
-				t.Fatalf("Interpolate(%q) error = %v, want no error without a dollar sign", input, err)
+				t.Fatalf("Expand(%q) error = %v, want no error without a dollar sign", input, err)
 			}
 			if got != input {
-				t.Fatalf("Interpolate(%q) = %q, want the input unchanged", input, got)
+				t.Fatalf("Expand(%q) = %q, want the input unchanged", input, got)
 			}
 		}
 
 		// Valid UTF-8 input and env values must give valid UTF-8 output.
-		if err == nil && utf8.ValidString(input) && !slices.Contains(identifiers, "BAD") && !utf8.ValidString(got) {
-			t.Fatalf("Interpolate(%q) = %q, which is not valid UTF-8", input, got)
+		if err == nil && utf8.ValidString(input) && !slices.Contains(names, "BAD") && !utf8.ValidString(got) {
+			t.Fatalf("Expand(%q) = %q, which is not valid UTF-8", input, got)
 		}
 
 		if parseErr != nil {
@@ -75,23 +75,23 @@ func FuzzInterpolate(f *testing.F) {
 		// After a successful parse, only a required expansion can fail, and its error starts
 		// with the name of the variable.
 		if err != nil && !strings.HasPrefix(err.Error(), "$") {
-			t.Fatalf("Interpolate(%q) error = %v, want an error from a required expansion", input, err)
+			t.Fatalf("Expand(%q) error = %v, want an error from a required expansion", input, err)
 		}
 
-		// Without identifiers, the output cannot depend on the env.
-		if len(identifiers) == 0 {
-			gotNil, errNil := interpolate.Interpolate(nil, input)
+		// Without names, the output cannot depend on the env.
+		if len(names) == 0 {
+			gotNil, errNil := interpolate.Expand(input, nil)
 			if gotNil != got || (errNil == nil) != (err == nil) {
-				t.Fatalf("Interpolate(%q) = (%q, %v) with env, but (%q, %v) without env", input, got, err, gotNil, errNil)
+				t.Fatalf("Expand(%q) = (%q, %v) with env, but (%q, %v) without env", input, got, err, gotNil, errNil)
 			}
 		}
 
 		// Without backslashes, escaping every dollar sign must give the input back unchanged.
 		if !strings.Contains(input, `\`) {
 			escaped := strings.ReplaceAll(input, "$", "$$")
-			unescaped, err := interpolate.Interpolate(env, escaped)
+			unescaped, err := interpolate.Expand(escaped, env)
 			if err != nil || unescaped != input {
-				t.Fatalf("Interpolate(%q) = (%q, %v), want (%q, nil)", escaped, unescaped, err, input)
+				t.Fatalf("Expand(%q) = (%q, %v), want (%q, nil)", escaped, unescaped, err, input)
 			}
 		}
 	})

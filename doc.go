@@ -1,6 +1,6 @@
 // Package interpolate expands shell-style parameters, such as $NAME and ${NAME:-default}, in
-// strings. It implements POSIX parameter expansion and some bash extensions, and reads values
-// from an [Env].
+// strings. It implements POSIX parameter expansion and some bash extensions. [Expand] reads
+// values from an [Env], and [Variables] lists the variables in a string.
 //
 // Supported expansions:
 //
@@ -19,5 +19,5 @@
 // that is not followed by a letter, an underscore, or { is kept as-is, so $1 and $(command) do
 // not change.
 //
-// [Interpolate] and [Identifiers] are safe for concurrent use if the [Env] is.
+// [Expand] and [Variables] are safe for concurrent use if the [Env] is.
 package interpolate

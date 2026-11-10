@@ -7,67 +7,209 @@ import (
 	"unicode/utf8"
 )
 
-// An expansion is something that takes in ENV and returns a string or an error
-type expansion interface {
-	// Expand expands the expansion using variables from env.
-	Expand(env Env) (string, error)
-
-	// Identifiers returns any variable names referenced within the expansion.
-	Identifiers() []string
+// requiredError returns the error for a required expansion. It uses the expansion of message, or
+// defaultMessage if message expands to an empty string.
+func requiredError(env Env, name string, message expression, defaultMessage string) error {
+	msg, err := message.expand(env)
+	if err != nil {
+		return err
+	}
+	if msg == "" {
+		msg = defaultMessage
+	}
+	return fmt.Errorf("$%s: %s", name, msg)
 }
 
-// variableExpansion represents either $VAR or ${VAR}, our simplest expansion
+// expression is a list of text and expansions.
+type expression []expressionItem
+
+// expand expands all expansions in the expression, and joins the results with the text.
+func (e expression) expand(env Env) (string, error) {
+	var buf strings.Builder
+	for _, item := range e {
+		if item.Expansion == nil {
+			buf.WriteString(item.Text)
+			continue
+		}
+		result, err := item.Expansion.expand(env)
+		if err != nil {
+			return "", err
+		}
+		buf.WriteString(result)
+	}
+	return buf.String(), nil
+}
+
+// variables returns the variable names referenced by all expansions in the expression, in order.
+// A name can occur more than once.
+func (e expression) variables() []string {
+	var names []string
+	for _, item := range e {
+		if item.Expansion != nil {
+			names = append(names, item.Expansion.variables()...)
+		}
+	}
+	return names
+}
+
+// expressionItem is either text or an expansion, never both.
+type expressionItem struct {
+	Text      string
+	Expansion expansion
+}
+
+func (i expressionItem) String() string {
+	if i.Expansion != nil {
+		return fmt.Sprintf("%#v", i.Expansion)
+	}
+	return fmt.Sprintf("%q", i.Text)
+}
+
+// expansion is one parameter expansion, such as $NAME or ${NAME:-word}.
+type expansion interface {
+	// expand returns the value of the expansion.
+	expand(env Env) (string, error)
+
+	// variables returns the variable names referenced by the expansion, including the names in
+	// its word or message.
+	variables() []string
+}
+
+// variableExpansion is $NAME or ${NAME}.
 type variableExpansion struct {
 	Identifier string
 }
 
-func (e variableExpansion) Identifiers() []string {
+func (e variableExpansion) variables() []string {
 	return []string{e.Identifier}
 }
 
-func (e variableExpansion) Expand(env Env) (string, error) {
-	val, _ := env.Get(e.Identifier)
-	return val, nil
+func (e variableExpansion) expand(env Env) (string, error) {
+	value, _ := env.Get(e.Identifier)
+	return value, nil
 }
 
-// emptyValueExpansion returns either the value of an env, or a default value if it's unset or null
+// emptyValueExpansion is ${NAME:-word}: the value, or word if the variable is unset or empty.
 type emptyValueExpansion struct {
 	Identifier string
 	Content    expression
 }
 
-func (e emptyValueExpansion) Identifiers() []string {
-	return append([]string{e.Identifier}, e.Content.Identifiers()...)
+func (e emptyValueExpansion) variables() []string {
+	return append([]string{e.Identifier}, e.Content.variables()...)
 }
 
-func (e emptyValueExpansion) Expand(env Env) (string, error) {
-	val, _ := env.Get(e.Identifier)
-	if val == "" {
-		return e.Content.Expand(env)
+func (e emptyValueExpansion) expand(env Env) (string, error) {
+	if value, _ := env.Get(e.Identifier); value != "" {
+		return value, nil
 	}
-	return val, nil
+	return e.Content.expand(env)
 }
 
-// unsetValueExpansion returns either the value of an env, or a default value if it's unset
+// unsetValueExpansion is ${NAME-word}: the value, or word if the variable is unset.
 type unsetValueExpansion struct {
 	Identifier string
 	Content    expression
 }
 
-func (e unsetValueExpansion) Identifiers() []string {
-	return append([]string{e.Identifier}, e.Content.Identifiers()...)
+func (e unsetValueExpansion) variables() []string {
+	return append([]string{e.Identifier}, e.Content.variables()...)
 }
 
-func (e unsetValueExpansion) Expand(env Env) (string, error) {
-	val, ok := env.Get(e.Identifier)
-	if !ok {
-		return e.Content.Expand(env)
+func (e unsetValueExpansion) expand(env Env) (string, error) {
+	if value, ok := env.Get(e.Identifier); ok {
+		return value, nil
 	}
-	return val, nil
+	return e.Content.expand(env)
 }
 
-// substringExpansion returns a substring (or slice) of the env. This is ${VAR:offset} or
-// ${VAR:offset:length}.
+// requiredExpansion is ${NAME?message}: the value, or an error if the variable is unset.
+type requiredExpansion struct {
+	Identifier string
+	Message    expression
+}
+
+func (e requiredExpansion) variables() []string {
+	return append([]string{e.Identifier}, e.Message.variables()...)
+}
+
+func (e requiredExpansion) expand(env Env) (string, error) {
+	value, ok := env.Get(e.Identifier)
+	if !ok {
+		return "", requiredError(env, e.Identifier, e.Message, "not set")
+	}
+	return value, nil
+}
+
+// requiredNonEmptyExpansion is ${NAME:?message}: the value, or an error if the variable is unset
+// or empty.
+type requiredNonEmptyExpansion struct {
+	Identifier string
+	Message    expression
+}
+
+func (e requiredNonEmptyExpansion) variables() []string {
+	return append([]string{e.Identifier}, e.Message.variables()...)
+}
+
+func (e requiredNonEmptyExpansion) expand(env Env) (string, error) {
+	value, _ := env.Get(e.Identifier)
+	if value == "" {
+		return "", requiredError(env, e.Identifier, e.Message, "empty or not set")
+	}
+	return value, nil
+}
+
+// alternateExpansion is ${NAME+word}: word if the variable is set, otherwise an empty string.
+type alternateExpansion struct {
+	Identifier string
+	Content    expression
+}
+
+func (e alternateExpansion) variables() []string {
+	return append([]string{e.Identifier}, e.Content.variables()...)
+}
+
+func (e alternateExpansion) expand(env Env) (string, error) {
+	if _, ok := env.Get(e.Identifier); !ok {
+		return "", nil
+	}
+	return e.Content.expand(env)
+}
+
+// alternateNonEmptyExpansion is ${NAME:+word}: word if the variable is set and not empty,
+// otherwise an empty string.
+type alternateNonEmptyExpansion struct {
+	Identifier string
+	Content    expression
+}
+
+func (e alternateNonEmptyExpansion) variables() []string {
+	return append([]string{e.Identifier}, e.Content.variables()...)
+}
+
+func (e alternateNonEmptyExpansion) expand(env Env) (string, error) {
+	if value, _ := env.Get(e.Identifier); value == "" {
+		return "", nil
+	}
+	return e.Content.expand(env)
+}
+
+// lengthExpansion is ${#NAME}: the number of characters in the value.
+type lengthExpansion struct {
+	Identifier string
+}
+
+func (e lengthExpansion) variables() []string {
+	return []string{e.Identifier}
+}
+
+func (e lengthExpansion) expand(env Env) (string, error) {
+	value, _ := env.Get(e.Identifier)
+	return strconv.Itoa(utf8.RuneCountInString(value)), nil
+}
+
+// substringExpansion is ${NAME:offset} or ${NAME:offset:length}.
 type substringExpansion struct {
 	Identifier string
 	Offset     int
@@ -75,11 +217,11 @@ type substringExpansion struct {
 	HasLength  bool
 }
 
-func (e substringExpansion) Identifiers() []string {
+func (e substringExpansion) variables() []string {
 	return []string{e.Identifier}
 }
 
-func (e substringExpansion) Expand(env Env) (string, error) {
+func (e substringExpansion) expand(env Env) (string, error) {
 	value, _ := env.Get(e.Identifier)
 	// Offsets and lengths count characters, not bytes, the same as bash in a UTF-8 locale. Each
 	// invalid UTF-8 byte counts as one character and is kept unchanged.
@@ -122,154 +264,4 @@ func byteOffset(s string, index int) int {
 		offset += size
 	}
 	return offset
-}
-
-// requiredExpansion returns an env value, or an error if it is unset. This is ${VAR?message}.
-type requiredExpansion struct {
-	Identifier string
-	Message    expression
-}
-
-func (e requiredExpansion) Identifiers() []string {
-	return append([]string{e.Identifier}, e.Message.Identifiers()...)
-}
-
-func (e requiredExpansion) Expand(env Env) (string, error) {
-	val, ok := env.Get(e.Identifier)
-	if !ok {
-		return "", requiredError(env, e.Identifier, e.Message, "not set")
-	}
-	return val, nil
-}
-
-// requiredNonEmptyExpansion returns an env value, or an error if it is unset or empty. This is
-// ${VAR:?message}.
-type requiredNonEmptyExpansion struct {
-	Identifier string
-	Message    expression
-}
-
-func (e requiredNonEmptyExpansion) Identifiers() []string {
-	return append([]string{e.Identifier}, e.Message.Identifiers()...)
-}
-
-func (e requiredNonEmptyExpansion) Expand(env Env) (string, error) {
-	val, _ := env.Get(e.Identifier)
-	if val == "" {
-		return "", requiredError(env, e.Identifier, e.Message, "empty or not set")
-	}
-	return val, nil
-}
-
-// alternateExpansion returns the expansion of Content if the env is set, and an empty string
-// otherwise. This is ${VAR+word}.
-type alternateExpansion struct {
-	Identifier string
-	Content    expression
-}
-
-func (e alternateExpansion) Identifiers() []string {
-	return append([]string{e.Identifier}, e.Content.Identifiers()...)
-}
-
-func (e alternateExpansion) Expand(env Env) (string, error) {
-	if _, ok := env.Get(e.Identifier); !ok {
-		return "", nil
-	}
-	return e.Content.Expand(env)
-}
-
-// alternateNonEmptyExpansion returns the expansion of Content if the env is set and not
-// empty, and an empty string otherwise. This is ${VAR:+word}.
-type alternateNonEmptyExpansion struct {
-	Identifier string
-	Content    expression
-}
-
-func (e alternateNonEmptyExpansion) Identifiers() []string {
-	return append([]string{e.Identifier}, e.Content.Identifiers()...)
-}
-
-func (e alternateNonEmptyExpansion) Expand(env Env) (string, error) {
-	if val, _ := env.Get(e.Identifier); val == "" {
-		return "", nil
-	}
-	return e.Content.Expand(env)
-}
-
-// lengthExpansion returns the number of characters in an env value, or 0 if it is unset. This is
-// ${#VAR}.
-type lengthExpansion struct {
-	Identifier string
-}
-
-func (e lengthExpansion) Identifiers() []string {
-	return []string{e.Identifier}
-}
-
-func (e lengthExpansion) Expand(env Env) (string, error) {
-	val, _ := env.Get(e.Identifier)
-	return strconv.Itoa(utf8.RuneCountInString(val)), nil
-}
-
-// requiredError returns the error for a required expansion. It uses the expansion of message, or
-// defaultMessage if message expands to an empty string.
-func requiredError(env Env, identifier string, message expression, defaultMessage string) error {
-	msg, err := message.Expand(env)
-	if err != nil {
-		return err
-	}
-	if msg == "" {
-		msg = defaultMessage
-	}
-	return fmt.Errorf("$%s: %s", identifier, msg)
-}
-
-// expression is a collection of either Text or Expansions
-type expression []expressionItem
-
-// Identifiers returns the variable names referenced by all expansions in the expression, in
-// order. A name can occur more than once.
-func (e expression) Identifiers() []string {
-	identifiers := []string{}
-	for _, item := range e {
-		if item.Expansion != nil {
-			identifiers = append(identifiers, item.Expansion.Identifiers()...)
-		}
-	}
-	return identifiers
-}
-
-// Expand expands all expansions in the expression using variables from env, and joins the results
-// with the text.
-func (e expression) Expand(env Env) (string, error) {
-	var buf strings.Builder
-
-	for _, item := range e {
-		if item.Expansion != nil {
-			result, err := item.Expansion.Expand(env)
-			if err != nil {
-				return "", err
-			}
-			buf.WriteString(result)
-		} else {
-			buf.WriteString(item.Text)
-		}
-	}
-
-	return buf.String(), nil
-}
-
-// expressionItem models either an Expansion or Text. Either/Or, never both.
-type expressionItem struct {
-	Text string
-	// -- or --
-	Expansion expansion
-}
-
-func (i expressionItem) String() string {
-	if i.Expansion != nil {
-		return fmt.Sprintf("%#v", i.Expansion)
-	}
-	return fmt.Sprintf("%q", i.Text)
 }

@@ -48,4 +48,4 @@ jobs:
         run: go test ./... -count=1 -race -v
       - name: Run fuzz test
         if: matrix.go-version == 'stable'
-        run: go test -run '^$' -fuzz FuzzInterpolate -fuzztime 60s .
+        run: go test -run '^$' -fuzz FuzzExpand -fuzztime 60s .
