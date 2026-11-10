@@ -12,17 +12,15 @@ import (
 )
 
 func ExampleInterpolate() {
-	env := interpolate.NewSliceEnv([]string{
-		"NAME=James",
-	})
+	env := interpolate.NewSliceEnv([]string{"NAME=James"})
 
-	output, err := interpolate.Interpolate(env, "Hello... ${NAME} welcome to the ${ANOTHER_VAR:-🏖}")
+	output, err := interpolate.Interpolate(env, "Hello ${NAME}, welcome to the ${PLACE:-🏖}")
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(output)
 
-	// Output: Hello... James welcome to the 🏖
+	// Output: Hello James, welcome to the 🏖
 }
 
 func ExampleIdentifiers() {

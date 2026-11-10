@@ -1,17 +1,13 @@
-# Interpolate
+# interpolate
 
 [![Build Status](https://github.com/mfridman/interpolate/actions/workflows/ci.yaml/badge.svg)](https://github.com/mfridman/interpolate/actions/workflows/ci.yaml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/mfridman/interpolate.svg)](https://pkg.go.dev/github.com/mfridman/interpolate)
 
-A Go library for parameter expansion (like `${NAME}` or `$NAME`) in strings from environment
-variables. An implementation of [POSIX Parameter
-Expansion](http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_06_02),
-plus some other basic operations that you'd expect in a shell scripting environment [like
-bash](https://www.gnu.org/software/bash/manual/html_node/Shell-Parameter-Expansion.html).
+A Go library that expands shell-style parameters, such as `$NAME` and `${NAME:-default}`, in strings. It implements [POSIX parameter expansion](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_06_02) and some [bash extensions](https://www.gnu.org/software/bash/manual/html_node/Shell-Parameter-Expansion.html).
 
 ## Installation
 
-```
+```sh
 go get github.com/mfridman/interpolate@latest
 ```
 
@@ -23,109 +19,84 @@ Requires Go 1.25 or later.
 package main
 
 import (
-  "github.com/mfridman/interpolate"
-  "fmt"
+	"fmt"
+	"log"
+
+	"github.com/mfridman/interpolate"
 )
 
 func main() {
-  env := interpolate.NewSliceEnv([]string{
-    "NAME=James",
-  })
+	env := interpolate.NewSliceEnv([]string{"NAME=James"})
 
-  output, _ := interpolate.Interpolate(env, "Hello... ${NAME} welcome to the ${ANOTHER_VAR:-🏖}")
-
-  fmt.Println(output)
-  // Output: Hello... James welcome to the 🏖
+	output, err := interpolate.Interpolate(env, "Hello ${NAME}, welcome to the ${PLACE:-🏖}")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(output) // Hello James, welcome to the 🏖
 }
 ```
 
-## Supported Expansions
+Use `interpolate.NewSliceEnv(os.Environ())` to read from the process environment, or `interpolate.NewMapEnv` for a map. `interpolate.Identifiers` returns the variable names in a string without expanding it.
 
-- `${parameter}` or `$parameter`
+## Supported expansions
 
-  - **Use value.** If parameter is set, then it shall be substituted; otherwise, it will be blank.
+| Syntax | Result |
+| --- | --- |
+| `$NAME` or `${NAME}` | The value of `NAME`, or an empty string if it is unset |
+| `${NAME:-word}` | `word` if `NAME` is unset or empty, otherwise the value |
+| `${NAME-word}` | `word` if `NAME` is unset, otherwise the value |
+| `${NAME:?message}` | An error if `NAME` is unset or empty, otherwise the value |
+| `${NAME?message}` | An error if `NAME` is unset, otherwise the value |
+| `${NAME:+word}` | `word` if `NAME` is set and not empty, otherwise an empty string |
+| `${NAME+word}` | `word` if `NAME` is set, otherwise an empty string |
+| `${#NAME}` | The length of the value in characters |
+| `${NAME:offset}` | The value from `offset` to the end |
+| `${NAME:offset:length}` | At most `length` characters of the value from `offset` |
 
-- `${parameter:-[word]}`
+- A name starts with a letter or an underscore, followed by letters, digits, or underscores (`[A-Za-z_][A-Za-z0-9_]*`).
+- A `word` or `message` can contain other expansions, such as `${NAME:-${FALLBACK:-default}}`. It is expanded only when it is used. Expansions can be nested up to 1000 levels deep.
+- The error from `?` and `:?` is `$NAME: message`. Without a message, it is `$NAME: not set` or `$NAME: empty or not set`.
 
-  - **Use default values.** If parameter is unset or null, the expansion of word (or an empty string if word is omitted) shall be substituted; otherwise, the value of parameter shall be substituted.
+### Substrings
 
-- `${parameter-[word]}`
+- Offsets and lengths count characters, not bytes. They are decimal integers; arithmetic is not supported.
+- A negative offset counts from the end. Put a space before it, as in `${NAME: -2}`, because `${NAME:-2}` is a default value.
+- An offset past the end, or before the start, gives an empty string.
+- A length past the end gives the rest of the value. A negative length ends that many characters before the end, so `${NAME:1:-1}` removes the first and last characters.
+- A blank offset or length counts as 0, so `${NAME::2}` gives the first two characters. `${NAME:}` is an error.
 
-  - **Use default values when not set.** If parameter is unset, the expansion of word (or an empty string if word is omitted) shall be substituted; otherwise, the value of parameter shall be substituted.
+## Escaping
 
-- `${parameter:?[word]}`
+| Input | Output |
+| --- | --- |
+| `$$NAME` or `\$NAME` | `$NAME` |
+| `$${NAME}` or `\${NAME}` | `${NAME}` |
+| `\}` in a `word` or `message` | `}` |
+| `$` not followed by a letter, `_`, or `{` | Kept as-is, so `$1`, `$(command)`, `price: $5`, and a trailing `$` do not change |
+| `\\` | Kept as-is |
 
-  - **Indicate error if null or unset.** If parameter is unset or null, the expansion of word (or a message indicating it is empty or unset if word is omitted) shall be returned as an error.
+A word ends at the first `}`, so write `${CONFIG:-{"a":1\}}` to get `{"a":1}`. Outside of `${...}`, `\}` is kept as-is.
 
-- `${parameter?[word]}`
-
-  - **Indicate error if unset.** If parameter is unset, the expansion of word (or a message indicating it is unset if word is omitted) shall be returned as an error.
-
-- `${parameter:+[word]}`
-
-  - **Use alternative value.** If parameter is unset or null, an empty string shall be substituted; otherwise, the expansion of word shall be substituted.
-
-- `${parameter+[word]}`
-
-  - **Use alternative value when set.** If parameter is unset, an empty string shall be substituted; otherwise, the expansion of word shall be substituted.
-
-- `${#parameter}`
-
-  - **String length.** The length in characters of the value of parameter shall be substituted. An unset parameter has a length of 0.
-
-- `${parameter:offset}`
-
-  - **Use the substring of parameter after offset.** A negative offset counts from the end of the value, and must be separated from the colon with a space, as in `${parameter: -2}`. An offset past the end, or before the start, gives an empty string.
-
-- `${parameter:[offset]:[length]}`
-
-  - **Use the substring of parameter after offset, of at most length characters.** A length past the end gives the rest of the value after the offset. A negative length ends that many characters before the end of the value, so `${parameter:1:-1}` removes the first and the last character. A blank offset or length counts as 0, so `${parameter::2}` is the first two characters.
-
-  Offsets and lengths count characters, not bytes, and are decimal integers; arithmetic expressions are not supported. The offset is required unless a length follows it, so `${parameter:}` is an error.
-
-A parameter name starts with a letter or an underscore, followed by letters, digits, or underscores (`[A-Za-z_][A-Za-z0-9_]*`).
-
-## Escaping and literal dollar signs
-
-- `$$parameter`, `\$parameter`, `$${expression}`, or `\${expression}`
-
-  - **Escaped expansion.** The expansion is not interpolated. `Interpolate` removes one level of escaping, so `$$NAME` becomes `$NAME`.
-
-- `$` not followed by a letter, an underscore, or `{`
-
-  - **Literal dollar sign.** The `$` is kept as-is. For example, `$1`, `$(command)`, `price: $5`, and a trailing `$` are not changed.
-
-- `\}` in the word of a brace expansion
-
-  - **Escaped closing brace.** The word stops at the first `}`, so write `\}` for a literal `}`. For example, `${CONFIG:-{"a":1\}}` gives `{"a":1}` when `CONFIG` is unset or empty. Outside a brace expansion, `\}` is kept as-is.
-
-- `\\`
-
-  - **Backslashes are kept.** A double backslash is kept as two backslashes, and it does not escape the `$` that follows it. For example, `\\$NAME` gives `\\` followed by the value of `NAME`. This keeps SQL strings such as `E'\\n'` unchanged. Because `\$` is an escape, you cannot write one backslash directly before a literal `$`. In a regular expression, write `[$]` instead of `\$`.
+A double backslash is kept as two backslashes, and it does not escape the `$` after it: `\\$NAME` gives `\\` followed by the value of `NAME`. You cannot put one backslash directly before a literal `$`. In a regular expression, write `[$]` instead of `\$`.
 
 ### SQL
 
-These rules matter when the input is SQL, for example in goose migrations with `ENVSUB ON`:
+These rules matter when the input is SQL, for example in [goose](https://github.com/pressly/goose) migrations with `ENVSUB ON`:
 
-- Dollar-quoted strings need escaping. `$$` becomes `$`, and the `$tag` in `$tag$` expands as a variable. Write `$$$$` for `$$` and `$$tag$$` for `$tag$`.
-- A `$` followed by a letter or `_` is always a variable. For example, in `format('%1$s', name)`, the `$s` expands. Write `%1$$s`.
-- Positional parameters such as `$1`, and `$` in regular expressions such as `'^abc$'`, are kept as-is.
+- Write `$$$$` for a `$$` dollar-quoted string, and `$$tag$$` for `$tag$`. Without escaping, `$$` becomes `$`, and `$tag` expands as a variable.
+- Write `%1$$s` in `format('%1$s', name)`, because `$s` is a variable.
+- Positional parameters such as `$1`, and a `$` at the end of a regular expression such as `'^abc$'`, are kept as-is.
 
 ## Not supported
 
-- Pattern removal: `${parameter%word}`, `${parameter%%word}`, `${parameter#word}`, and `${parameter##word}`.
-- Assignment: `${parameter:=word}` and `${parameter=word}`.
-- Special and positional parameters, such as `$1`, `$@`, `$*`, `$#`, and `$?`. These are kept as literal text.
+- Pattern removal: `${NAME%word}`, `${NAME%%word}`, `${NAME#word}`, and `${NAME##word}`.
+- Assignment: `${NAME:=word}` and `${NAME=word}`.
+- Special and positional parameters, such as `$1`, `$@`, `$*`, `$#`, and `$?`. They are kept as literal text.
 
-## Prior work
+## Acknowledgements
 
-This repository is a fork of [buildkite/interpolate](https://github.com/buildkite/interpolate). I'd
-like to thank the authors of that library for their work. I've forked it to make some changes that I
-needed for my own use cases, and to make it easier to maintain. I've also added some tests and
-documentation.
-
-This fork does not track upstream. It has the same behavior for bare `$` signs, but it does not have upstream's `EscapedExpansion` type. In this fork, `Identifiers("$$NAME")` returns no identifiers, while upstream returns `$NAME`. See [CHANGELOG.md](CHANGELOG.md) for the changes in this fork.
+This project started as a fork of [buildkite/interpolate](https://github.com/buildkite/interpolate). Thanks to its authors for their work.
 
 ## License
 
-Licensed under MIT license, in `LICENSE`.
+[MIT](LICENSE.txt)
