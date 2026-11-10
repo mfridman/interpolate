@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [v0.1.0] - 2026-11-10
+
 ### Added
 
 - `${VAR:?message}`: error if `VAR` is unset or empty ([#2](https://github.com/mfridman/interpolate/issues/2)).
@@ -31,10 +33,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Substrings with a length near the maximum `int` value no longer panic.
 - Invalid UTF-8 bytes in the input are kept unchanged. Before, they became U+FFFD.
+- Calling `Parse` again on the same `Parser` parses the input again. Before, it returned an empty expression.
 
 ## [v0.0.2]
 
 The last release before the changes above. See [buildkite/interpolate](https://github.com/buildkite/interpolate) for the history before the fork.
 
-[Unreleased]: https://github.com/mfridman/interpolate/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/mfridman/interpolate/compare/v0.1.0...HEAD
+[v0.1.0]: https://github.com/mfridman/interpolate/compare/v0.0.2...v0.1.0
 [v0.0.2]: https://github.com/mfridman/interpolate/releases/tag/v0.0.2
