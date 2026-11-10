@@ -163,8 +163,7 @@ func TestParser(t *testing.T) {
 		{
 			String: `$(echo hello world)`,
 			Expected: []interpolate.ExpressionItem{
-				{Text: `$(`},
-				{Text: `echo hello world)`},
+				{Text: `$(echo hello world)`},
 			},
 		},
 	}

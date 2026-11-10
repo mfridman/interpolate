@@ -104,17 +104,98 @@ func TestIgnoresParentheses(t *testing.T) {
 	}
 }
 
-func TestVariablesMustStartWithLetters(t *testing.T) {
-	for _, str := range []string{
-		`$1 burgers`,
-		`$99bottles`,
+func TestLiteralDollarSigns(t *testing.T) {
+	t.Parallel()
+
+	environ := interpolate.NewMapEnv(map[string]string{
+		"TEST1": "A test",
+	})
+
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{
+		{input: "$", want: "$"},
+		{input: "trailing $", want: "trailing $"},
+		{input: "This $ is not a variable", want: "This $ is not a variable"},
+		{input: "$1 burgers", want: "$1 burgers"},
+		{input: "$99bottles", want: "$99bottles"},
+		{input: "price: $5, $TEST1", want: "price: $5, A test"},
+		{input: "SELECT * FROM t WHERE id = $1 AND name = $2", want: "SELECT * FROM t WHERE id = $1 AND name = $2"},
+		{input: "a$\tb", want: "a$\tb"},
+		{input: "$-$@$*$#$?$!", want: "$-$@$*$#$?$!"},
+		{input: "grep 'xi$'", want: "grep 'xi$'"},
+		{input: "${UNSET:-$}", want: "$"},
+		{input: "${UNSET:-$5}", want: "$5"},
+		{input: "$é", want: "$é"},
 	} {
-		_, err := interpolate.Interpolate(nil, str)
-		if err == nil {
-			t.Fatalf("Test %q should have resulted in an error", str)
-		} else {
-			t.Log(err)
-		}
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := interpolate.Interpolate(environ, tc.input)
+			if err != nil {
+				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUnderscoreIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	environ := interpolate.NewMapEnv(map[string]string{
+		"_":       "underscore",
+		"_TEST":   "leading",
+		"TEST_1_": "trailing",
+	})
+
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{
+		{input: "$_", want: "underscore"},
+		{input: "${_}", want: "underscore"},
+		{input: "$_TEST", want: "leading"},
+		{input: "${_TEST}", want: "leading"},
+		{input: "$TEST_1_", want: "trailing"},
+		{input: "${_UNSET:-default}", want: "default"},
+	} {
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := interpolate.Interpolate(environ, tc.input)
+			if err != nil {
+				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInvalidBraceExpansions(t *testing.T) {
+	t.Parallel()
+
+	for _, input := range []string{
+		"${}",
+		"${1}",
+		"${é}",
+		"${FOO!}",
+	} {
+		input := input
+		t.Run(input, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := interpolate.Interpolate(nil, input); err == nil {
+				t.Errorf("Interpolate(%q) error = nil, want error", input)
+			}
+		})
 	}
 }
 
@@ -260,6 +341,12 @@ func TestEscapingVariables(t *testing.T) {
 		{`Do this \$ESCAPE_PARTY`, `Do this $ESCAPE_PARTY`},
 		{`Do this $${SUCH_ESCAPE}`, `Do this ${SUCH_ESCAPE}`},
 		{`Do this \${SUCH_ESCAPE}`, `Do this ${SUCH_ESCAPE}`},
+		{`Do this $${SUCH_ESCAPE:-$OTHERWISE}`, `Do this ${SUCH_ESCAPE:-}`},
+		{`Do this \${SUCH_ESCAPE:-$OTHERWISE}`, `Do this ${SUCH_ESCAPE:-}`},
+		{`Do this $${SUCH_ESCAPE:-$$OTHERWISE}`, `Do this ${SUCH_ESCAPE:-$OTHERWISE}`},
+		{`Do this \${SUCH_ESCAPE:-\$OTHERWISE}`, `Do this ${SUCH_ESCAPE:-$OTHERWISE}`},
+		{`echo "my favourite mountain is cotopaxi" | grep 'xi$$'`, `echo "my favourite mountain is cotopaxi" | grep 'xi$'`},
+		{`$${not actually a brace expression`, `${not actually a brace expression`},
 	} {
 		result, err := interpolate.Interpolate(nil, tc.Str)
 		if err != nil {
@@ -279,6 +366,8 @@ func TestExtractingIdentifiers(t *testing.T) {
 		{`Hello ${REQUIRED_VAR?}`, []string{`REQUIRED_VAR`}},
 		{`${LLAMAS:-${ROCK:-true}}`, []string{`LLAMAS`, `ROCK`}},
 		{`${BUILDKITE_COMMIT:0}`, []string{`BUILDKITE_COMMIT`}},
+		{`This $ is not a variable`, []string{}},
+		{`$1 and $_UNDERSCORE`, []string{`_UNDERSCORE`}},
 	} {
 		id, err := interpolate.Identifiers(tc.Str)
 		if err != nil {

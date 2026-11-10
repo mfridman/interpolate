@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -25,10 +24,11 @@ import (
 /*
 EscapedBackslash = "\\"
 EscapedDollar    = ( "\$" | "$$")
-Identifier       = letter { letters | digit | "_" }
+Identifier       = ( letter | "_" ) { letter | digit | "_" }
 Expansion        = "$" ( Identifier | Brace )
+LiteralDollar    = "$" (not followed by "{" or a letter or "_")
 Brace            = "{" Identifier [ Identifier BraceOperation ] "}"
-Text             = { EscapedBackslash | EscapedDollar | all characters except "$" }
+Text             = { EscapedBackslash | EscapedDollar | LiteralDollar | all characters except "$" }
 Expression       = { Text | Expansion }
 EmptyValue       = ":-" { Expression }
 UnsetValue       = "-" { Expression }
@@ -81,15 +81,9 @@ func (p *Parser) parseExpression(stop ...rune) (Expression, error) {
 			continue
 		}
 
-		// Ignore bash shell expansions
-		if strings.HasPrefix(p.input[p.pos:], `$(`) {
-			p.pos += 2
-			expr = append(expr, ExpressionItem{Text: `$(`})
-			continue
-		}
-
-		// If we run into a dollar sign and it's not the last char, it's an expansion
-		if c == '$' && p.pos < (len(p.input)-1) {
+		// A dollar sign starts an expansion only when a brace or a name follows it. Anything else,
+		// such as "$1", "$ ", "$(" or a trailing "$", is literal text.
+		if c == '$' && p.isExpansionStart() {
 			expansion, err := p.parseExpansion()
 			if err != nil {
 				return nil, err
@@ -260,13 +254,30 @@ func (p *Parser) scanUntil(f func(rune) bool) string {
 }
 
 func (p *Parser) scanIdentifier() (string, error) {
-	if c := p.peekRune(); !unicode.IsLetter(c) {
-		return "", fmt.Errorf("Expected identifier to start with a letter, got %c", c)
+	if c := p.peekRune(); !isIdentifierStart(c) {
+		return "", fmt.Errorf("Expected identifier to start with a letter or underscore, got %c", c)
 	}
-	var notIdentifierChar = func(r rune) bool {
-		return (!unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_')
+	notIdentifierChar := func(r rune) bool {
+		return !isIdentifierChar(r)
 	}
 	return p.scanUntil(notIdentifierChar), nil
+}
+
+// isExpansionStart reports whether the dollar sign at the current position starts an expansion.
+func (p *Parser) isExpansionStart() bool {
+	next, _ := utf8.DecodeRuneInString(p.input[p.pos+1:])
+	return next == '{' || isIdentifierStart(next)
+}
+
+// isIdentifierStart reports whether r can start a POSIX name: an ASCII letter or an underscore.
+func isIdentifierStart(r rune) bool {
+	return r == '_' || ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z')
+}
+
+// isIdentifierChar reports whether r can continue a POSIX name: an ASCII letter, an ASCII digit,
+// or an underscore.
+func isIdentifierChar(r rune) bool {
+	return isIdentifierStart(r) || ('0' <= r && r <= '9')
 }
 
 func (p *Parser) nextRune() rune {
