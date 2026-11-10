@@ -1,16 +1,14 @@
-package interpolate_test
+package interpolate
 
 import (
 	"reflect"
 	"testing"
-
-	"github.com/mfridman/interpolate"
 )
 
 func TestParserReuse(t *testing.T) {
 	t.Parallel()
 
-	parser := interpolate.NewParser("a $B c")
+	parser := newParser("a $B c")
 	first, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("first Parse() error = %v", err)
@@ -23,7 +21,7 @@ func TestParserReuse(t *testing.T) {
 		t.Errorf("Parse() = %v, then %v, want the same 3 items twice", first, second)
 	}
 
-	invalid := interpolate.NewParser("${FOO")
+	invalid := newParser("${FOO")
 	for range 2 {
 		if _, err := invalid.Parse(); err == nil {
 			t.Error(`NewParser("${FOO").Parse() error = nil, want error on each call`)
@@ -35,13 +33,13 @@ func TestExpressionItemString(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		item interpolate.ExpressionItem
+		item expressionItem
 		want string
 	}{
-		{item: interpolate.ExpressionItem{Text: "a b"}, want: `"a b"`},
+		{item: expressionItem{Text: "a b"}, want: `"a b"`},
 		{
-			item: interpolate.ExpressionItem{Expansion: interpolate.VariableExpansion{Identifier: "B"}},
-			want: `interpolate.VariableExpansion{Identifier:"B"}`,
+			item: expressionItem{Expansion: variableExpansion{Identifier: "B"}},
+			want: `interpolate.variableExpansion{Identifier:"B"}`,
 		},
 	} {
 		if got := tc.item.String(); got != tc.want {
@@ -55,19 +53,19 @@ func TestParser(t *testing.T) {
 
 	for _, tc := range []struct {
 		input string
-		want  interpolate.Expression
+		want  expression
 	}{
 		{
 			input: `Buildkite... ${HELLO_WORLD} ${ANOTHER_VAR:-🏖}`,
-			want: interpolate.Expression{
+			want: expression{
 				{Text: "Buildkite... "},
-				{Expansion: interpolate.VariableExpansion{
+				{Expansion: variableExpansion{
 					Identifier: "HELLO_WORLD",
 				}},
 				{Text: " "},
-				{Expansion: interpolate.EmptyValueExpansion{
+				{Expansion: emptyValueExpansion{
 					Identifier: "ANOTHER_VAR",
-					Content: interpolate.Expression{{
+					Content: expression{{
 						Text: "🏖",
 					}},
 				}},
@@ -75,15 +73,15 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${TEST1:- ${TEST2:-$TEST3}}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.EmptyValueExpansion{
+			want: expression{
+				{Expansion: emptyValueExpansion{
 					Identifier: "TEST1",
-					Content: interpolate.Expression{
+					Content: expression{
 						{Text: " "},
-						{Expansion: interpolate.EmptyValueExpansion{
+						{Expansion: emptyValueExpansion{
 							Identifier: "TEST2",
-							Content: interpolate.Expression{
-								{Expansion: interpolate.VariableExpansion{
+							Content: expression{
+								{Expansion: variableExpansion{
 									Identifier: "TEST3",
 								}},
 							},
@@ -94,10 +92,10 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${HELLO_WORLD-blah}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.UnsetValueExpansion{
+			want: expression{
+				{Expansion: unsetValueExpansion{
 					Identifier: "HELLO_WORLD",
-					Content: interpolate.Expression{{
+					Content: expression{{
 						Text: "blah",
 					}},
 				}},
@@ -105,11 +103,11 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `\\${HELLO_WORLD-blah}`,
-			want: interpolate.Expression{
+			want: expression{
 				{Text: `\\`},
-				{Expansion: interpolate.UnsetValueExpansion{
+				{Expansion: unsetValueExpansion{
 					Identifier: "HELLO_WORLD",
-					Content: interpolate.Expression{{
+					Content: expression{{
 						Text: "blah",
 					}},
 				}},
@@ -117,14 +115,14 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `\${HELLO_WORLD-blah}`,
-			want: interpolate.Expression{
+			want: expression{
 				{Text: `$`},
 				{Text: `{HELLO_WORLD-blah}`},
 			},
 		},
 		{
 			input: `Test \\\${HELLO_WORLD-blah}`,
-			want: interpolate.Expression{
+			want: expression{
 				{Text: `Test `},
 				{Text: `\\`},
 				{Text: `$`},
@@ -133,8 +131,8 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${HELLO_WORLD:1}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.SubstringExpansion{
+			want: expression{
+				{Expansion: substringExpansion{
 					Identifier: "HELLO_WORLD",
 					Offset:     1,
 				}},
@@ -142,8 +140,8 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${HELLO_WORLD: -1}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.SubstringExpansion{
+			want: expression{
+				{Expansion: substringExpansion{
 					Identifier: "HELLO_WORLD",
 					Offset:     -1,
 				}},
@@ -151,10 +149,10 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${HELLO_WORLD:-1}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.EmptyValueExpansion{
+			want: expression{
+				{Expansion: emptyValueExpansion{
 					Identifier: "HELLO_WORLD",
-					Content: interpolate.Expression{{
+					Content: expression{{
 						Text: "1",
 					}},
 				}},
@@ -162,8 +160,8 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${HELLO_WORLD:1:7}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.SubstringExpansion{
+			want: expression{
+				{Expansion: substringExpansion{
 					Identifier: "HELLO_WORLD",
 					Offset:     1,
 					Length:     7,
@@ -173,8 +171,8 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${HELLO_WORLD:1:-7}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.SubstringExpansion{
+			want: expression{
+				{Expansion: substringExpansion{
 					Identifier: "HELLO_WORLD",
 					Offset:     1,
 					Length:     -7,
@@ -184,10 +182,10 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${HELLO_WORLD?Required}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.RequiredExpansion{
+			want: expression{
+				{Expansion: requiredExpansion{
 					Identifier: "HELLO_WORLD",
-					Message: interpolate.Expression{
+					Message: expression{
 						{Text: "Required"},
 					},
 				}},
@@ -195,10 +193,10 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${HELLO_WORLD:?Required}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.RequiredNonEmptyExpansion{
+			want: expression{
+				{Expansion: requiredNonEmptyExpansion{
 					Identifier: "HELLO_WORLD",
-					Message: interpolate.Expression{
+					Message: expression{
 						{Text: "Required"},
 					},
 				}},
@@ -206,10 +204,10 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${HELLO_WORLD+alt}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.AlternateExpansion{
+			want: expression{
+				{Expansion: alternateExpansion{
 					Identifier: "HELLO_WORLD",
-					Content: interpolate.Expression{
+					Content: expression{
 						{Text: "alt"},
 					},
 				}},
@@ -217,10 +215,10 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${HELLO_WORLD:+alt}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.AlternateNonEmptyExpansion{
+			want: expression{
+				{Expansion: alternateNonEmptyExpansion{
 					Identifier: "HELLO_WORLD",
-					Content: interpolate.Expression{
+					Content: expression{
 						{Text: "alt"},
 					},
 				}},
@@ -228,35 +226,35 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `${#HELLO_WORLD}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.LengthExpansion{
+			want: expression{
+				{Expansion: lengthExpansion{
 					Identifier: "HELLO_WORLD",
 				}},
 			},
 		},
 		{
 			input: `$`,
-			want: interpolate.Expression{
+			want: expression{
 				{Text: `$`},
 			},
 		},
 		{
 			input: `\`,
-			want: interpolate.Expression{
+			want: expression{
 				{Text: `\`},
 			},
 		},
 		{
 			input: "price: $5 \xff",
-			want: interpolate.Expression{
+			want: expression{
 				{Text: "price: "},
 				{Text: "$5 \xff"},
 			},
 		},
 		{
 			input: `${HELLO_WORLD::7}`,
-			want: interpolate.Expression{
-				{Expansion: interpolate.SubstringExpansion{
+			want: expression{
+				{Expansion: substringExpansion{
 					Identifier: "HELLO_WORLD",
 					Length:     7,
 					HasLength:  true,
@@ -265,7 +263,7 @@ func TestParser(t *testing.T) {
 		},
 		{
 			input: `$(echo hello world)`,
-			want: interpolate.Expression{
+			want: expression{
 				{Text: `$(echo hello world)`},
 			},
 		},
@@ -273,7 +271,7 @@ func TestParser(t *testing.T) {
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := interpolate.NewParser(tc.input).Parse()
+			got, err := newParser(tc.input).Parse()
 			if err != nil {
 				t.Fatalf("NewParser(%q).Parse() error = %v", tc.input, err)
 			}

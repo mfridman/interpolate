@@ -19,5 +19,5 @@
 // that is not followed by a letter, an underscore, or { is kept as-is, so $1 and $(command) do
 // not change.
 //
-// [Interpolate] and [Identifiers] are safe for concurrent use if the [Env] is. A [Parser] is not.
+// [Interpolate] and [Identifiers] are safe for concurrent use if the [Env] is.
 package interpolate

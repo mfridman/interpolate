@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Removed
+
+- The exported parser and expression types, such as `Parser`, `NewParser`, `Expression`, `ExpressionItem`, `Expansion`, and the `*Expansion` types. Use `Interpolate` and `Identifiers`.
+
 ## [v0.1.0] - 2026-11-10
 
 ### Added

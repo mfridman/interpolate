@@ -42,11 +42,8 @@ func FuzzInterpolate(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input string) {
 		got, err := interpolate.Interpolate(env, input)
 
-		_, parseErr := interpolate.NewParser(input).Parse()
-		identifiers, identifiersErr := interpolate.Identifiers(input)
-		if (parseErr == nil) != (identifiersErr == nil) {
-			t.Fatalf("Parse error = %v, but Identifiers error = %v", parseErr, identifiersErr)
-		}
+		// Identifiers fails exactly when the input does not parse.
+		identifiers, parseErr := interpolate.Identifiers(input)
 		if parseErr != nil && err == nil {
 			t.Fatalf("Parse error = %v, but Interpolate succeeded", parseErr)
 		}

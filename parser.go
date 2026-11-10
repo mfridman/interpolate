@@ -52,16 +52,16 @@ const (
 	maxNestingDepth = 1000
 )
 
-// Parser takes a string and parses out a tree of structs that represent text and Expansions
-type Parser struct {
+// parser takes a string and parses out a tree of structs that represent text and Expansions
+type parser struct {
 	input string // the string we are scanning
 	pos   int    // the current position
 	depth int    // the current number of nested brace expansions
 }
 
-// NewParser returns a new instance of a Parser
-func NewParser(str string) *Parser {
-	return &Parser{
+// newParser returns a new instance of a Parser
+func newParser(str string) *parser {
+	return &parser{
 		input: str,
 		pos:   0,
 	}
@@ -69,14 +69,14 @@ func NewParser(str string) *Parser {
 
 // Parse expansions out of the internal text and return them as a tree of Expressions. Each call
 // parses the whole input again.
-func (p *Parser) Parse() (Expression, error) {
+func (p *parser) Parse() (expression, error) {
 	p.pos = 0
 	p.depth = 0
 	return p.parseExpression()
 }
 
-func (p *Parser) parseExpression(stop ...rune) (Expression, error) {
-	var expr Expression
+func (p *parser) parseExpression(stop ...rune) (expression, error) {
+	var expr expression
 	var stopStr = string(stop)
 
 	for {
@@ -88,17 +88,17 @@ func (p *Parser) parseExpression(stop ...rune) (Expression, error) {
 		// check for our escaped characters first, as we assume nothing subsequently is escaped
 		if strings.HasPrefix(p.input[p.pos:], `\\`) {
 			p.pos += 2
-			expr = append(expr, ExpressionItem{Text: `\\`})
+			expr = append(expr, expressionItem{Text: `\\`})
 			continue
 		} else if stopStr != "" && strings.HasPrefix(p.input[p.pos:], `\}`) {
 			// Inside a brace expansion, an escaped closing brace is text and does not end the
 			// expansion, the same as bash.
 			p.pos += 2
-			expr = append(expr, ExpressionItem{Text: `}`})
+			expr = append(expr, expressionItem{Text: `}`})
 			continue
 		} else if strings.HasPrefix(p.input[p.pos:], `\$`) || strings.HasPrefix(p.input[p.pos:], `$$`) {
 			p.pos += 2
-			expr = append(expr, ExpressionItem{Text: `$`})
+			expr = append(expr, expressionItem{Text: `$`})
 			continue
 		}
 
@@ -109,7 +109,7 @@ func (p *Parser) parseExpression(stop ...rune) (Expression, error) {
 			if err != nil {
 				return nil, err
 			}
-			expr = append(expr, ExpressionItem{Expansion: expansion})
+			expr = append(expr, expressionItem{Expansion: expansion})
 			continue
 		}
 
@@ -123,13 +123,13 @@ func (p *Parser) parseExpression(stop ...rune) (Expression, error) {
 			return (r == '$' || r == '\\' || strings.ContainsRune(stopStr, r))
 		})
 
-		expr = append(expr, ExpressionItem{Text: p.input[start:p.pos]})
+		expr = append(expr, expressionItem{Text: p.input[start:p.pos]})
 	}
 
 	return expr, nil
 }
 
-func (p *Parser) parseExpansion() (Expansion, error) {
+func (p *parser) parseExpansion() (expansion, error) {
 	if c := p.nextRune(); c != '$' {
 		return nil, fmt.Errorf("expected expansion to start with $, got %s", describeRune(c))
 	}
@@ -144,10 +144,10 @@ func (p *Parser) parseExpansion() (Expansion, error) {
 		return nil, err
 	}
 
-	return VariableExpansion{Identifier: identifier}, nil
+	return variableExpansion{Identifier: identifier}, nil
 }
 
-func (p *Parser) parseBraceExpansion() (Expansion, error) {
+func (p *parser) parseBraceExpansion() (expansion, error) {
 	if c := p.nextRune(); c != '{' {
 		return nil, fmt.Errorf("expected brace expansion to start with {, got %s", describeRune(c))
 	}
@@ -175,7 +175,7 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 
 	if c := p.peekRune(); c == '}' {
 		_ = p.nextRune()
-		return VariableExpansion{Identifier: identifier}, nil
+		return variableExpansion{Identifier: identifier}, nil
 	}
 
 	operator, err := p.scanOperator()
@@ -183,7 +183,7 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 		return nil, err
 	}
 
-	var expansion Expansion
+	var expansion expansion
 	if operator == ":" {
 		expansion, err = p.parseSubstringExpansion(identifier)
 		if err != nil {
@@ -198,17 +198,17 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 		}
 		switch operator {
 		case ":-":
-			expansion = EmptyValueExpansion{Identifier: identifier, Content: word}
+			expansion = emptyValueExpansion{Identifier: identifier, Content: word}
 		case "-":
-			expansion = UnsetValueExpansion{Identifier: identifier, Content: word}
+			expansion = unsetValueExpansion{Identifier: identifier, Content: word}
 		case ":?":
-			expansion = RequiredNonEmptyExpansion{Identifier: identifier, Message: word}
+			expansion = requiredNonEmptyExpansion{Identifier: identifier, Message: word}
 		case "?":
-			expansion = RequiredExpansion{Identifier: identifier, Message: word}
+			expansion = requiredExpansion{Identifier: identifier, Message: word}
 		case ":+":
-			expansion = AlternateNonEmptyExpansion{Identifier: identifier, Content: word}
+			expansion = alternateNonEmptyExpansion{Identifier: identifier, Content: word}
 		case "+":
-			expansion = AlternateExpansion{Identifier: identifier, Content: word}
+			expansion = alternateExpansion{Identifier: identifier, Content: word}
 		}
 	}
 
@@ -222,7 +222,7 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 // scanOperator scans the operator after the identifier in a brace expansion. A colon on its own
 // is a substring operator. A colon followed by "-", "?" or "+" also treats an empty value as
 // unset.
-func (p *Parser) scanOperator() (string, error) {
+func (p *parser) scanOperator() (string, error) {
 	switch op1 := p.nextRune(); op1 {
 	case ':':
 		if op2 := p.peekRune(); op2 == '-' || op2 == '?' || op2 == '+' {
@@ -237,7 +237,7 @@ func (p *Parser) scanOperator() (string, error) {
 	}
 }
 
-func (p *Parser) parseLengthExpansion() (Expansion, error) {
+func (p *parser) parseLengthExpansion() (expansion, error) {
 	identifier, err := p.scanIdentifier()
 	if err != nil {
 		return nil, err
@@ -247,10 +247,10 @@ func (p *Parser) parseLengthExpansion() (Expansion, error) {
 		return nil, fmt.Errorf("expected length expansion to end with }, got %s", describeRune(c))
 	}
 
-	return LengthExpansion{Identifier: identifier}, nil
+	return lengthExpansion{Identifier: identifier}, nil
 }
 
-func (p *Parser) parseSubstringExpansion(identifier string) (Expansion, error) {
+func (p *parser) parseSubstringExpansion(identifier string) (expansion, error) {
 	offset := p.scanUntil(func(r rune) bool {
 		return r == ':' || r == '}'
 	})
@@ -268,7 +268,7 @@ func (p *Parser) parseSubstringExpansion(identifier string) (Expansion, error) {
 	}
 
 	if !hasLength {
-		return SubstringExpansion{Identifier: identifier, Offset: offsetInt}, nil
+		return substringExpansion{Identifier: identifier, Offset: offsetInt}, nil
 	}
 
 	_ = p.nextRune()
@@ -281,7 +281,7 @@ func (p *Parser) parseSubstringExpansion(identifier string) (Expansion, error) {
 		return nil, fmt.Errorf("parse substring length: %w", err)
 	}
 
-	return SubstringExpansion{Identifier: identifier, Offset: offsetInt, Length: lengthInt, HasLength: true}, nil
+	return substringExpansion{Identifier: identifier, Offset: offsetInt, Length: lengthInt, HasLength: true}, nil
 }
 
 // parseSubstringNumber parses a substring offset or length. A blank value is 0, the same as bash.
@@ -293,7 +293,7 @@ func parseSubstringNumber(value string) (int, error) {
 	return strconv.Atoi(value)
 }
 
-func (p *Parser) scanUntil(f func(rune) bool) string {
+func (p *parser) scanUntil(f func(rune) bool) string {
 	start := p.pos
 	for p.pos < len(p.input) {
 		c, size := utf8.DecodeRuneInString(p.input[p.pos:])
@@ -305,7 +305,7 @@ func (p *Parser) scanUntil(f func(rune) bool) string {
 	return p.input[start:p.pos]
 }
 
-func (p *Parser) scanIdentifier() (string, error) {
+func (p *parser) scanIdentifier() (string, error) {
 	if c := p.peekRune(); !isIdentifierStart(c) {
 		return "", fmt.Errorf("expected identifier to start with a letter or underscore, got %s", describeRune(c))
 	}
@@ -316,7 +316,7 @@ func (p *Parser) scanIdentifier() (string, error) {
 }
 
 // isExpansionStart reports whether the dollar sign at the current position starts an expansion.
-func (p *Parser) isExpansionStart() bool {
+func (p *parser) isExpansionStart() bool {
 	next, _ := utf8.DecodeRuneInString(p.input[p.pos+1:])
 	return next == '{' || isIdentifierStart(next)
 }
@@ -332,7 +332,7 @@ func isIdentifierChar(r rune) bool {
 	return isIdentifierStart(r) || ('0' <= r && r <= '9')
 }
 
-func (p *Parser) nextRune() rune {
+func (p *parser) nextRune() rune {
 	if p.pos >= len(p.input) {
 		return eof
 	}
@@ -341,7 +341,7 @@ func (p *Parser) nextRune() rune {
 	return c
 }
 
-func (p *Parser) peekRune() rune {
+func (p *parser) peekRune() rune {
 	if p.pos >= len(p.input) {
 		return eof
 	}
