@@ -263,6 +263,92 @@ func TestSubstringsWithOffsets(t *testing.T) {
 	}
 }
 
+func TestSubstringsWithMultibyteCharacters(t *testing.T) {
+	t.Parallel()
+
+	environ := interpolate.NewMapEnv(map[string]string{"GREETING": "héllo wörld 🦀"})
+
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{
+		{input: "${GREETING:1}", want: "éllo wörld 🦀"},
+		{input: "${GREETING:2}", want: "llo wörld 🦀"},
+		{input: "${GREETING:1:3}", want: "éll"},
+		{input: "${GREETING: -1}", want: "🦀"},
+		{input: "${GREETING: -7:5}", want: "wörld"},
+		{input: "${GREETING:6:-2}", want: "wörld"},
+	} {
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := interpolate.Interpolate(environ, tc.input)
+			if err != nil {
+				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInvalidUTF8IsPreserved(t *testing.T) {
+	t.Parallel()
+
+	environ := interpolate.NewMapEnv(map[string]string{"TEST1": "A test"})
+
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{
+		{input: "bad\xffbyte", want: "bad\xffbyte"},
+		{input: "\xfe\xff", want: "\xfe\xff"},
+		{input: "$TEST1\xff", want: "A test\xff"},
+		{input: "${UNSET:-\xff}", want: "\xff"},
+		{input: "valid \uFFFD stays", want: "valid \uFFFD stays"},
+	} {
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := interpolate.Interpolate(environ, tc.input)
+			if err != nil {
+				t.Fatalf("Interpolate(%q) error = %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("Interpolate(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseErrors(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		input   string
+		wantErr string
+	}{
+		{input: "${FOO", wantErr: "expected an operator, got end of input"},
+		{input: "${FOO:-bar", wantErr: "expected brace expansion to end with }, got end of input"},
+		{input: "${", wantErr: "expected identifier to start with a letter or underscore, got end of input"},
+		{input: "${FOO!}", wantErr: "expected an operator, got '!'"},
+		{input: "${1}", wantErr: "expected identifier to start with a letter or underscore, got '1'"},
+	} {
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := interpolate.Interpolate(nil, tc.input)
+			if err == nil || err.Error() != tc.wantErr {
+				t.Errorf("Interpolate(%q) error = %v, want %q", tc.input, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestInterpolateIsntGreedy(t *testing.T) {
 	environ := interpolate.NewMapEnv(map[string]string{
 		"BUILDKITE_COMMIT":       "cfeeee3fa7fa1a6311723f5cbff95b738ec6e683",
@@ -366,6 +452,8 @@ func TestExtractingIdentifiers(t *testing.T) {
 		{`Hello ${REQUIRED_VAR?}`, []string{`REQUIRED_VAR`}},
 		{`${LLAMAS:-${ROCK:-true}}`, []string{`LLAMAS`, `ROCK`}},
 		{`${BUILDKITE_COMMIT:0}`, []string{`BUILDKITE_COMMIT`}},
+		{`${UNSET-$DEFAULT}`, []string{`UNSET`, `DEFAULT`}},
+		{`${REQUIRED?missing $NAME}`, []string{`REQUIRED`, `NAME`}},
 		{`This $ is not a variable`, []string{}},
 		{`$1 and $_UNDERSCORE`, []string{`_UNDERSCORE`}},
 	} {

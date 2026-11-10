@@ -92,15 +92,17 @@ func (p *Parser) parseExpression(stop ...rune) (Expression, error) {
 			continue
 		}
 
-		// nibble a character, otherwise if it's a \ or a $ we can loop
-		c = p.nextRune()
+		// Nibble a character, otherwise if it's a \ or a $ we can loop. Slice the input instead of
+		// re-encoding runes, so invalid UTF-8 bytes pass through unchanged.
+		start := p.pos
+		_ = p.nextRune()
 
 		// Scan as much as we can into text
-		text := p.scanUntil(func(r rune) bool {
+		p.scanUntil(func(r rune) bool {
 			return (r == '$' || r == '\\' || strings.ContainsRune(stopStr, r))
 		})
 
-		expr = append(expr, ExpressionItem{Text: string(c) + text})
+		expr = append(expr, ExpressionItem{Text: p.input[start:p.pos]})
 	}
 
 	return expr, nil
@@ -108,7 +110,7 @@ func (p *Parser) parseExpression(stop ...rune) (Expression, error) {
 
 func (p *Parser) parseExpansion() (Expansion, error) {
 	if c := p.nextRune(); c != '$' {
-		return nil, fmt.Errorf("Expected expansion to start with $, got %c", c)
+		return nil, fmt.Errorf("expected expansion to start with $, got %s", describeRune(c))
 	}
 
 	// if we have an open brace, this is a brace expansion
@@ -126,7 +128,7 @@ func (p *Parser) parseExpansion() (Expansion, error) {
 
 func (p *Parser) parseBraceExpansion() (Expansion, error) {
 	if c := p.nextRune(); c != '{' {
-		return nil, fmt.Errorf("Expected brace expansion to start with {, got %c", c)
+		return nil, fmt.Errorf("expected brace expansion to start with {, got %s", describeRune(c))
 	}
 
 	identifier, err := p.scanIdentifier()
@@ -153,7 +155,7 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 	} else if op1 == '?' || op1 == '-' {
 		operator = string(op1)
 	} else {
-		return nil, fmt.Errorf("Expected an operator, got %c", op1)
+		return nil, fmt.Errorf("expected an operator, got %s", describeRune(op1))
 	}
 
 	switch operator {
@@ -180,7 +182,7 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 	}
 
 	if c := p.nextRune(); c != '}' {
-		return nil, fmt.Errorf("Expected brace expansion to end with }, got %c", c)
+		return nil, fmt.Errorf("expected brace expansion to end with }, got %s", describeRune(c))
 	}
 
 	return exp, nil
@@ -212,7 +214,7 @@ func (p *Parser) parseSubstringExpansion(identifier string) (Expansion, error) {
 
 	offsetInt, err := strconv.Atoi(strings.TrimSpace(offset))
 	if err != nil {
-		return nil, fmt.Errorf("Unable to parse offset: %v", err)
+		return nil, fmt.Errorf("parse substring offset: %w", err)
 	}
 
 	if c := p.peekRune(); c == '}' {
@@ -226,7 +228,7 @@ func (p *Parser) parseSubstringExpansion(identifier string) (Expansion, error) {
 
 	lengthInt, err := strconv.Atoi(strings.TrimSpace(length))
 	if err != nil {
-		return nil, fmt.Errorf("Unable to parse length: %v", err)
+		return nil, fmt.Errorf("parse substring length: %w", err)
 	}
 
 	return SubstringExpansion{Identifier: identifier, Offset: offsetInt, Length: lengthInt, HasLength: true}, nil
@@ -245,7 +247,7 @@ func (p *Parser) scanUntil(f func(rune) bool) string {
 	start := p.pos
 	for int(p.pos) < len(p.input) {
 		c, size := utf8.DecodeRuneInString(p.input[p.pos:])
-		if c == utf8.RuneError || f(c) {
+		if f(c) {
 			break
 		}
 		p.pos += size
@@ -255,7 +257,7 @@ func (p *Parser) scanUntil(f func(rune) bool) string {
 
 func (p *Parser) scanIdentifier() (string, error) {
 	if c := p.peekRune(); !isIdentifierStart(c) {
-		return "", fmt.Errorf("Expected identifier to start with a letter or underscore, got %c", c)
+		return "", fmt.Errorf("expected identifier to start with a letter or underscore, got %s", describeRune(c))
 	}
 	notIdentifierChar := func(r rune) bool {
 		return !isIdentifierChar(r)
@@ -295,4 +297,12 @@ func (p *Parser) peekRune() rune {
 	}
 	c, _ := utf8.DecodeRuneInString(p.input[p.pos:])
 	return c
+}
+
+// describeRune returns a description of r for use in error messages.
+func describeRune(r rune) string {
+	if r == eof {
+		return "end of input"
+	}
+	return fmt.Sprintf("%q", r)
 }

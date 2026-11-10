@@ -72,7 +72,7 @@ type UnsetValueExpansion struct {
 }
 
 func (e UnsetValueExpansion) Identifiers() []string {
-	return []string{e.Identifier}
+	return append([]string{e.Identifier}, e.Content.Identifiers()...)
 }
 
 func (e UnsetValueExpansion) Expand(env Env) (string, error) {
@@ -96,7 +96,9 @@ func (e SubstringExpansion) Identifiers() []string {
 }
 
 func (e SubstringExpansion) Expand(env Env) (string, error) {
-	val, _ := env.Get(e.Identifier)
+	value, _ := env.Get(e.Identifier)
+	// Offsets and lengths count characters, not bytes, the same as bash in a UTF-8 locale.
+	val := []rune(value)
 
 	from := e.Offset
 
@@ -116,7 +118,7 @@ func (e SubstringExpansion) Expand(env Env) (string, error) {
 	}
 
 	if !e.HasLength {
-		return val[from:], nil
+		return string(val[from:]), nil
 	}
 
 	to := e.Length
@@ -139,7 +141,7 @@ func (e SubstringExpansion) Expand(env Env) (string, error) {
 		to = len(val)
 	}
 
-	return val[from:to], nil
+	return string(val[from:to]), nil
 }
 
 // RequiredExpansion returns an env value, or an error if it is unset
@@ -149,7 +151,7 @@ type RequiredExpansion struct {
 }
 
 func (e RequiredExpansion) Identifiers() []string {
-	return []string{e.Identifier}
+	return append([]string{e.Identifier}, e.Message.Identifiers()...)
 }
 
 func (e RequiredExpansion) Expand(env Env) (string, error) {
