@@ -7,9 +7,9 @@ import (
 	"unicode/utf8"
 )
 
-// requiredError returns the error for a required expansion. It uses the expansion of message, or
+// unsetError returns the error for a required expansion. It uses the expansion of message, or
 // defaultMessage if message expands to an empty string.
-func requiredError(env Env, name string, message expression, defaultMessage string) error {
+func unsetError(env Env, name string, message expression, defaultMessage string) error {
 	msg, err := message.expand(env)
 	if err != nil {
 		return err
@@ -17,7 +17,7 @@ func requiredError(env Env, name string, message expression, defaultMessage stri
 	if msg == "" {
 		msg = defaultMessage
 	}
-	return fmt.Errorf("$%s: %s", name, msg)
+	return &UnsetVariableError{Name: name, Message: msg}
 }
 
 // expression is a list of text and expansions.
@@ -136,7 +136,7 @@ func (e requiredExpansion) variables() []string {
 func (e requiredExpansion) expand(env Env) (string, error) {
 	value, ok := env.Lookup(e.Identifier)
 	if !ok {
-		return "", requiredError(env, e.Identifier, e.Message, "not set")
+		return "", unsetError(env, e.Identifier, e.Message, "not set")
 	}
 	return value, nil
 }
@@ -155,7 +155,7 @@ func (e requiredNonEmptyExpansion) variables() []string {
 func (e requiredNonEmptyExpansion) expand(env Env) (string, error) {
 	value, _ := env.Lookup(e.Identifier)
 	if value == "" {
-		return "", requiredError(env, e.Identifier, e.Message, "empty or not set")
+		return "", unsetError(env, e.Identifier, e.Message, "empty or not set")
 	}
 	return value, nil
 }

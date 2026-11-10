@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - `LookupFunc`, an adapter that makes a function such as `os.LookupEnv` an `Env`.
+- `UnsetVariableError`, the error from `${NAME?message}` and `${NAME:?message}`, with `Name` and `Message` fields. The error text does not change.
 
 ### Changed
 

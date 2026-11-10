@@ -19,5 +19,7 @@
 // that is not followed by a letter, an underscore, or { is kept as-is, so $1 and $(command) do
 // not change.
 //
+// A required expansion that fails returns an [*UnsetVariableError].
+//
 // [Expand] and [Variables] are safe for concurrent use if the [Env] is.
 package interpolate

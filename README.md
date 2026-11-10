@@ -47,7 +47,14 @@ Values come from an `Env`:
 
 ### Errors
 
-`${NAME?message}` and `${NAME:?message}` return an error with the text `$NAME: message`.
+`${NAME?message}` and `${NAME:?message}` return an `*interpolate.UnsetVariableError` with the variable `Name` and the `Message`. Its text is `$NAME: message`.
+
+```go
+var unsetErr *interpolate.UnsetVariableError
+if errors.As(err, &unsetErr) {
+	fmt.Println(unsetErr.Name) // PORT
+}
+```
 
 ## Supported expansions
 

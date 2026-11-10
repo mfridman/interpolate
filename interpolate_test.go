@@ -1,6 +1,7 @@
 package interpolate_test
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -44,6 +45,17 @@ func ExampleLookupFunc() {
 	fmt.Println(output)
 
 	// Output: default
+}
+
+func ExampleUnsetVariableError() {
+	_, err := interpolate.Expand("${PORT:?port is required}", nil)
+
+	var unsetErr *interpolate.UnsetVariableError
+	if errors.As(err, &unsetErr) {
+		fmt.Println(unsetErr.Name, "-", unsetErr.Message)
+	}
+
+	// Output: PORT - port is required
 }
 
 func ExampleNewMapEnv() {
@@ -550,6 +562,44 @@ func TestVariablesParseError(t *testing.T) {
 
 	if _, err := interpolate.Variables("${FOO"); err == nil {
 		t.Error(`Variables("${FOO") error = nil, want error`)
+	}
+}
+
+func TestUnsetVariableError(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{"EMPTY": ""})
+
+	for _, tc := range []struct {
+		input       string
+		wantName    string
+		wantMessage string
+	}{
+		{input: "${NAME?}", wantName: "NAME", wantMessage: "not set"},
+		{input: "${NAME?custom $EMPTY message}", wantName: "NAME", wantMessage: "custom  message"},
+		{input: "${EMPTY:?}", wantName: "EMPTY", wantMessage: "empty or not set"},
+		{input: "${EMPTY:?must be set}", wantName: "EMPTY", wantMessage: "must be set"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := interpolate.Expand(tc.input, env)
+			var unsetErr *interpolate.UnsetVariableError
+			if !errors.As(err, &unsetErr) {
+				t.Fatalf("Expand(%q) error = %v, want *UnsetVariableError", tc.input, err)
+			}
+			if unsetErr.Name != tc.wantName || unsetErr.Message != tc.wantMessage {
+				t.Errorf("Expand(%q) error = {Name: %q, Message: %q}, want {Name: %q, Message: %q}",
+					tc.input, unsetErr.Name, unsetErr.Message, tc.wantName, tc.wantMessage)
+			}
+		})
+	}
+
+	// Parse errors are not an *UnsetVariableError.
+	_, err := interpolate.Expand("${NAME", nil)
+	var unsetErr *interpolate.UnsetVariableError
+	if err == nil || errors.As(err, &unsetErr) {
+		t.Errorf(`Expand("${NAME") error = %v, want a parse error`, err)
 	}
 }
 

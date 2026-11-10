@@ -1,6 +1,7 @@
 package interpolate_test
 
 import (
+	"errors"
 	"regexp"
 	"slices"
 	"strings"
@@ -72,10 +73,10 @@ func FuzzExpand(f *testing.F) {
 			return
 		}
 
-		// After a successful parse, only a required expansion can fail, and its error starts
-		// with the name of the variable.
-		if err != nil && !strings.HasPrefix(err.Error(), "$") {
-			t.Fatalf("Expand(%q) error = %v, want an error from a required expansion", input, err)
+		// After a successful parse, only a required expansion can fail.
+		var unsetErr *interpolate.UnsetVariableError
+		if err != nil && !errors.As(err, &unsetErr) {
+			t.Fatalf("Expand(%q) error = %v, want an *UnsetVariableError", input, err)
 		}
 
 		// Without names, the output cannot depend on the env.
