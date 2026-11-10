@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [v0.2.0] - 2026-11-10
+
 This release renames the API and hides the parser types. To upgrade, replace `interpolate.Interpolate(env, s)` with `interpolate.Expand(s, env)`, and rename the `Get` method of a custom `Env` to `Lookup`, or use `interpolate.LookupFunc(os.LookupEnv)`.
 
 ### Added
@@ -62,6 +64,7 @@ This release renames the API and hides the parser types. To upgrade, replace `in
 
 The last release before the changes above. See [buildkite/interpolate](https://github.com/buildkite/interpolate) for the history before the fork.
 
-[Unreleased]: https://github.com/mfridman/interpolate/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mfridman/interpolate/compare/v0.2.0...HEAD
+[v0.2.0]: https://github.com/mfridman/interpolate/compare/v0.1.0...v0.2.0
 [v0.1.0]: https://github.com/mfridman/interpolate/compare/v0.0.2...v0.1.0
 [v0.0.2]: https://github.com/mfridman/interpolate/releases/tag/v0.0.2
