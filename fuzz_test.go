@@ -79,6 +79,16 @@ func FuzzExpand(f *testing.F) {
 			t.Fatalf("Expand(%q) error = %v, want an *UnsetVariableError", input, err)
 		}
 
+		// WithNoUnset can only add errors for unset variables. When it succeeds, the output is
+		// the same as without it.
+		strict, strictErr := interpolate.Expand(input, env, interpolate.WithNoUnset())
+		if strictErr != nil && !errors.As(strictErr, &unsetErr) {
+			t.Fatalf("Expand(%q, WithNoUnset()) error = %v, want an *UnsetVariableError", input, strictErr)
+		}
+		if strictErr == nil && (err != nil || strict != got) {
+			t.Fatalf("Expand(%q, WithNoUnset()) = %q, but Expand = (%q, %v)", input, strict, got, err)
+		}
+
 		// Without names, the output cannot depend on the env.
 		if len(names) == 0 {
 			gotNil, errNil := interpolate.Expand(input, nil)

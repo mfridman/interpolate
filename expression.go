@@ -7,10 +7,26 @@ import (
 	"unicode/utf8"
 )
 
+// expandContext holds the values and settings for one call to Expand.
+type expandContext struct {
+	env     Env
+	noUnset bool
+}
+
+// value returns the value of name for a plain reference, such as $NAME or ${NAME:1}. With
+// noUnset, an unset variable is an error.
+func (c *expandContext) value(name string) (string, error) {
+	value, ok := c.env.Lookup(name)
+	if !ok && c.noUnset {
+		return "", &UnsetVariableError{Name: name, Message: "not set"}
+	}
+	return value, nil
+}
+
 // unsetError returns the error for a required expansion. It uses the expansion of message, or
 // defaultMessage if message expands to an empty string.
-func unsetError(env Env, name string, message expression, defaultMessage string) error {
-	msg, err := message.expand(env)
+func (c *expandContext) unsetError(name string, message expression, defaultMessage string) error {
+	msg, err := message.expand(c)
 	if err != nil {
 		return err
 	}
@@ -24,14 +40,14 @@ func unsetError(env Env, name string, message expression, defaultMessage string)
 type expression []expressionItem
 
 // expand expands all expansions in the expression, and joins the results with the text.
-func (e expression) expand(env Env) (string, error) {
+func (e expression) expand(c *expandContext) (string, error) {
 	var buf strings.Builder
 	for _, item := range e {
 		if item.Expansion == nil {
 			buf.WriteString(item.Text)
 			continue
 		}
-		result, err := item.Expansion.expand(env)
+		result, err := item.Expansion.expand(c)
 		if err != nil {
 			return "", err
 		}
@@ -68,7 +84,7 @@ func (i expressionItem) String() string {
 // expansion is one parameter expansion, such as $NAME or ${NAME:-word}.
 type expansion interface {
 	// expand returns the value of the expansion.
-	expand(env Env) (string, error)
+	expand(c *expandContext) (string, error)
 
 	// variables returns the variable names referenced by the expansion, including the names in
 	// its word or message.
@@ -84,9 +100,8 @@ func (e variableExpansion) variables() []string {
 	return []string{e.Identifier}
 }
 
-func (e variableExpansion) expand(env Env) (string, error) {
-	value, _ := env.Lookup(e.Identifier)
-	return value, nil
+func (e variableExpansion) expand(c *expandContext) (string, error) {
+	return c.value(e.Identifier)
 }
 
 // emptyValueExpansion is ${NAME:-word}: the value, or word if the variable is unset or empty.
@@ -99,11 +114,11 @@ func (e emptyValueExpansion) variables() []string {
 	return append([]string{e.Identifier}, e.Content.variables()...)
 }
 
-func (e emptyValueExpansion) expand(env Env) (string, error) {
-	if value, _ := env.Lookup(e.Identifier); value != "" {
+func (e emptyValueExpansion) expand(c *expandContext) (string, error) {
+	if value, _ := c.env.Lookup(e.Identifier); value != "" {
 		return value, nil
 	}
-	return e.Content.expand(env)
+	return e.Content.expand(c)
 }
 
 // unsetValueExpansion is ${NAME-word}: the value, or word if the variable is unset.
@@ -116,11 +131,11 @@ func (e unsetValueExpansion) variables() []string {
 	return append([]string{e.Identifier}, e.Content.variables()...)
 }
 
-func (e unsetValueExpansion) expand(env Env) (string, error) {
-	if value, ok := env.Lookup(e.Identifier); ok {
+func (e unsetValueExpansion) expand(c *expandContext) (string, error) {
+	if value, ok := c.env.Lookup(e.Identifier); ok {
 		return value, nil
 	}
-	return e.Content.expand(env)
+	return e.Content.expand(c)
 }
 
 // requiredExpansion is ${NAME?message}: the value, or an error if the variable is unset.
@@ -133,10 +148,10 @@ func (e requiredExpansion) variables() []string {
 	return append([]string{e.Identifier}, e.Message.variables()...)
 }
 
-func (e requiredExpansion) expand(env Env) (string, error) {
-	value, ok := env.Lookup(e.Identifier)
+func (e requiredExpansion) expand(c *expandContext) (string, error) {
+	value, ok := c.env.Lookup(e.Identifier)
 	if !ok {
-		return "", unsetError(env, e.Identifier, e.Message, "not set")
+		return "", c.unsetError(e.Identifier, e.Message, "not set")
 	}
 	return value, nil
 }
@@ -152,10 +167,10 @@ func (e requiredNonEmptyExpansion) variables() []string {
 	return append([]string{e.Identifier}, e.Message.variables()...)
 }
 
-func (e requiredNonEmptyExpansion) expand(env Env) (string, error) {
-	value, _ := env.Lookup(e.Identifier)
+func (e requiredNonEmptyExpansion) expand(c *expandContext) (string, error) {
+	value, _ := c.env.Lookup(e.Identifier)
 	if value == "" {
-		return "", unsetError(env, e.Identifier, e.Message, "empty or not set")
+		return "", c.unsetError(e.Identifier, e.Message, "empty or not set")
 	}
 	return value, nil
 }
@@ -170,11 +185,11 @@ func (e alternateExpansion) variables() []string {
 	return append([]string{e.Identifier}, e.Content.variables()...)
 }
 
-func (e alternateExpansion) expand(env Env) (string, error) {
-	if _, ok := env.Lookup(e.Identifier); !ok {
+func (e alternateExpansion) expand(c *expandContext) (string, error) {
+	if _, ok := c.env.Lookup(e.Identifier); !ok {
 		return "", nil
 	}
-	return e.Content.expand(env)
+	return e.Content.expand(c)
 }
 
 // alternateNonEmptyExpansion is ${NAME:+word}: word if the variable is set and not empty,
@@ -188,11 +203,11 @@ func (e alternateNonEmptyExpansion) variables() []string {
 	return append([]string{e.Identifier}, e.Content.variables()...)
 }
 
-func (e alternateNonEmptyExpansion) expand(env Env) (string, error) {
-	if value, _ := env.Lookup(e.Identifier); value == "" {
+func (e alternateNonEmptyExpansion) expand(c *expandContext) (string, error) {
+	if value, _ := c.env.Lookup(e.Identifier); value == "" {
 		return "", nil
 	}
-	return e.Content.expand(env)
+	return e.Content.expand(c)
 }
 
 // lengthExpansion is ${#NAME}: the number of characters in the value.
@@ -204,8 +219,11 @@ func (e lengthExpansion) variables() []string {
 	return []string{e.Identifier}
 }
 
-func (e lengthExpansion) expand(env Env) (string, error) {
-	value, _ := env.Lookup(e.Identifier)
+func (e lengthExpansion) expand(c *expandContext) (string, error) {
+	value, err := c.value(e.Identifier)
+	if err != nil {
+		return "", err
+	}
 	return strconv.Itoa(utf8.RuneCountInString(value)), nil
 }
 
@@ -221,8 +239,11 @@ func (e substringExpansion) variables() []string {
 	return []string{e.Identifier}
 }
 
-func (e substringExpansion) expand(env Env) (string, error) {
-	value, _ := env.Lookup(e.Identifier)
+func (e substringExpansion) expand(c *expandContext) (string, error) {
+	value, err := c.value(e.Identifier)
+	if err != nil {
+		return "", err
+	}
 	// Offsets and lengths count characters, not bytes, the same as bash in a UTF-8 locale. Each
 	// invalid UTF-8 byte counts as one character and is kept unchanged.
 	size := utf8.RuneCountInString(value)

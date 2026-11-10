@@ -47,6 +47,15 @@ func ExampleLookupFunc() {
 	// Output: default
 }
 
+func ExampleWithNoUnset() {
+	env := interpolate.NewMapEnv(map[string]string{"SCHEMA": "app"})
+
+	_, err := interpolate.Expand("CREATE TABLE $SCHEMA.users AS $body$", env, interpolate.WithNoUnset())
+	fmt.Println(err)
+
+	// Output: $body: not set
+}
+
 func ExampleUnsetVariableError() {
 	_, err := interpolate.Expand("${PORT:?port is required}", nil)
 
@@ -565,6 +574,58 @@ func TestVariablesParseError(t *testing.T) {
 	}
 }
 
+func TestNoUnset(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{"SET": "value", "EMPTY": ""})
+
+	for _, tc := range []expandTest{
+		// Plain references to an unset variable are errors.
+		{input: "$UNSET", wantErr: "$UNSET: not set"},
+		{input: "${UNSET}", wantErr: "$UNSET: not set"},
+		{input: "${#UNSET}", wantErr: "$UNSET: not set"},
+		{input: "${UNSET:1}", wantErr: "$UNSET: not set"},
+		{input: "${UNSET:1:2}", wantErr: "$UNSET: not set"},
+		{input: "AS $body$", wantErr: "$body: not set"},
+		{input: "${SET:-$UNSET}", want: "value"},
+		{input: "${EMPTY:-$UNSET}", wantErr: "$UNSET: not set"},
+		{input: "${UNSET?${OTHER}}", wantErr: "$OTHER: not set"},
+
+		// Set variables, including empty ones, are not errors.
+		{input: "$SET ${EMPTY} ${#EMPTY} ${SET:1}", want: "value  0 alue"},
+
+		// Expansions that handle an unset variable do not change.
+		{input: "${UNSET:-default}", want: "default"},
+		{input: "${UNSET-default}", want: "default"},
+		{input: "${UNSET:+alt}", want: ""},
+		{input: "${UNSET+alt}", want: ""},
+		{input: "${UNSET?message}", wantErr: "$UNSET: message"},
+		{input: "${EMPTY:?}", wantErr: "$EMPTY: empty or not set"},
+
+		// Escapes and literal dollar signs are not references.
+		{input: "$$UNSET \\\\$UNSET2 $1 $", wantErr: "$UNSET2: not set"},
+		{input: "$$UNSET \\${UNSET} $1 $", want: "$UNSET ${UNSET} $1 $"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := interpolate.Expand(tc.input, env, interpolate.WithNoUnset())
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Errorf("Expand(%q, WithNoUnset()) error = %v, want %q", tc.input, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Expand(%q, WithNoUnset()) error = %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("Expand(%q, WithNoUnset()) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestUnsetVariableError(t *testing.T) {
 	t.Parallel()
 
@@ -572,6 +633,7 @@ func TestUnsetVariableError(t *testing.T) {
 
 	for _, tc := range []struct {
 		input       string
+		opts        []interpolate.Option
 		wantName    string
 		wantMessage string
 	}{
@@ -579,11 +641,12 @@ func TestUnsetVariableError(t *testing.T) {
 		{input: "${NAME?custom $EMPTY message}", wantName: "NAME", wantMessage: "custom  message"},
 		{input: "${EMPTY:?}", wantName: "EMPTY", wantMessage: "empty or not set"},
 		{input: "${EMPTY:?must be set}", wantName: "EMPTY", wantMessage: "must be set"},
+		{input: "text $NAME", opts: []interpolate.Option{interpolate.WithNoUnset()}, wantName: "NAME", wantMessage: "not set"},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := interpolate.Expand(tc.input, env)
+			_, err := interpolate.Expand(tc.input, env, tc.opts...)
 			var unsetErr *interpolate.UnsetVariableError
 			if !errors.As(err, &unsetErr) {
 				t.Fatalf("Expand(%q) error = %v, want *UnsetVariableError", tc.input, err)

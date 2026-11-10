@@ -6,14 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+This release renames the API and hides the parser types. To upgrade, replace `interpolate.Interpolate(env, s)` with `interpolate.Expand(s, env)`, and rename the `Get` method of a custom `Env` to `Lookup`, or use `interpolate.LookupFunc(os.LookupEnv)`.
+
 ### Added
 
 - `LookupFunc`, an adapter that makes a function such as `os.LookupEnv` an `Env`.
-- `UnsetVariableError`, the error from `${NAME?message}` and `${NAME:?message}`, with `Name` and `Message` fields. The error text does not change.
+- `UnsetVariableError`, the error from `${NAME?message}`, `${NAME:?message}` and `WithNoUnset`, with `Name` and `Message` fields. The error text does not change.
+- `WithNoUnset`, an option that makes a reference to an unset variable an error, the same as `set -u` in bash.
 
 ### Changed
 
-- `Interpolate(env, s)` is now `Expand(s, env)`.
+- `Interpolate(env, s)` is now `Expand(s, env, opts...)`.
 - `Identifiers` is now `Variables`, and returns each name only once, in the order of first use.
 - The `Get` method of `Env` is now `Lookup`.
 - `NewSliceEnv(slice)` is now `NewListEnv(pairs...)`. Use `NewListEnv(os.Environ()...)` for a slice.

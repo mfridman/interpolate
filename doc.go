@@ -19,7 +19,8 @@
 // that is not followed by a letter, an underscore, or { is kept as-is, so $1 and $(command) do
 // not change.
 //
-// A required expansion that fails returns an [*UnsetVariableError].
+// A required expansion that fails returns an [*UnsetVariableError]. Use [WithNoUnset] to make a
+// reference to an unset variable an error too, the same as set -u in bash.
 //
 // [Expand] and [Variables] are safe for concurrent use if the [Env] is.
 package interpolate

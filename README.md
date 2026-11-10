@@ -45,7 +45,7 @@ Values come from an `Env`:
 
 `interpolate.Variables` returns the names of the variables in a string, without repeats, and does not expand it.
 
-### Errors
+### Errors and strict mode
 
 `${NAME?message}` and `${NAME:?message}` return an `*interpolate.UnsetVariableError` with the variable `Name` and the `Message`. Its text is `$NAME: message`.
 
@@ -54,6 +54,13 @@ var unsetErr *interpolate.UnsetVariableError
 if errors.As(err, &unsetErr) {
 	fmt.Println(unsetErr.Name) // PORT
 }
+```
+
+By default, an unset variable expands to an empty string, the same as a shell. Use `interpolate.WithNoUnset()` to make a reference to an unset variable an error, the same as `set -u` in bash. Expansions that handle an unset variable, such as `${NAME:-word}`, do not change.
+
+```go
+output, err := interpolate.Expand(input, env, interpolate.WithNoUnset())
+// $TYPO -> error: $TYPO: not set
 ```
 
 ## Supported expansions
