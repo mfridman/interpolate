@@ -103,32 +103,47 @@ func (e SubstringExpansion) Identifiers() []string {
 
 func (e SubstringExpansion) Expand(env Env) (string, error) {
 	value, _ := env.Get(e.Identifier)
-	// Offsets and lengths count characters, not bytes, the same as bash in a UTF-8 locale.
-	runes := []rune(value)
-	size := len(runes)
+	// Offsets and lengths count characters, not bytes, the same as bash in a UTF-8 locale. Each
+	// invalid UTF-8 byte counts as one character and is kept unchanged.
+	size := utf8.RuneCountInString(value)
 
-	// A negative offset counts from the end. Clamp the offset to the bounds of the value. The
-	// order of operations prevents integer overflow for extreme offsets and lengths.
+	// A negative offset counts from the end. An offset before the start gives an empty string,
+	// the same as bash. The order of operations prevents integer overflow for extreme offsets
+	// and lengths.
 	from := e.Offset
 	if from < 0 {
-		from = max(size+from, 0)
+		if from < -size {
+			return "", nil
+		}
+		from += size
 	}
 	from = min(from, size)
 
-	if !e.HasLength {
-		return string(runes[from:]), nil
-	}
-
 	// A positive length counts from the offset. A negative length counts back from the end, and
 	// cannot go before the offset.
-	var to int
-	if e.Length >= 0 {
-		to = from + min(e.Length, size-from)
-	} else {
-		to = max(size+e.Length, from)
+	to := size
+	if e.HasLength {
+		if e.Length >= 0 {
+			to = from + min(e.Length, size-from)
+		} else {
+			to = max(size+e.Length, from)
+		}
 	}
 
-	return string(runes[from:to]), nil
+	start := byteOffset(value, from)
+	end := start + byteOffset(value[start:], to-from)
+	return value[start:end], nil
+}
+
+// byteOffset returns the byte offset of the character at index in s. Each invalid UTF-8 byte
+// counts as one character, the same as [utf8.RuneCountInString].
+func byteOffset(s string, index int) int {
+	offset := 0
+	for range index {
+		_, size := utf8.DecodeRuneInString(s[offset:])
+		offset += size
+	}
+	return offset
 }
 
 // RequiredExpansion returns an env value, or an error if it is unset. This is ${VAR?message}.
@@ -168,36 +183,36 @@ func (e RequiredNonEmptyExpansion) Expand(env Env) (string, error) {
 	return val, nil
 }
 
-// AlternateValueExpansion returns the expansion of Content if the env is set, and an empty string
+// AlternateExpansion returns the expansion of Content if the env is set, and an empty string
 // otherwise. This is ${VAR+word}.
-type AlternateValueExpansion struct {
+type AlternateExpansion struct {
 	Identifier string
 	Content    Expression
 }
 
-func (e AlternateValueExpansion) Identifiers() []string {
+func (e AlternateExpansion) Identifiers() []string {
 	return append([]string{e.Identifier}, e.Content.Identifiers()...)
 }
 
-func (e AlternateValueExpansion) Expand(env Env) (string, error) {
+func (e AlternateExpansion) Expand(env Env) (string, error) {
 	if _, ok := env.Get(e.Identifier); !ok {
 		return "", nil
 	}
 	return e.Content.Expand(env)
 }
 
-// AlternateNonEmptyValueExpansion returns the expansion of Content if the env is set and not
+// AlternateNonEmptyExpansion returns the expansion of Content if the env is set and not
 // empty, and an empty string otherwise. This is ${VAR:+word}.
-type AlternateNonEmptyValueExpansion struct {
+type AlternateNonEmptyExpansion struct {
 	Identifier string
 	Content    Expression
 }
 
-func (e AlternateNonEmptyValueExpansion) Identifiers() []string {
+func (e AlternateNonEmptyExpansion) Identifiers() []string {
 	return append([]string{e.Identifier}, e.Content.Identifiers()...)
 }
 
-func (e AlternateNonEmptyValueExpansion) Expand(env Env) (string, error) {
+func (e AlternateNonEmptyExpansion) Expand(env Env) (string, error) {
 	if val, _ := env.Get(e.Identifier); val == "" {
 		return "", nil
 	}

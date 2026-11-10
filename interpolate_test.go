@@ -269,7 +269,10 @@ func TestSubstringsWithOffsets(t *testing.T) {
 		{input: "${BUILDKITE_COMMIT: +7}", want: "e39f647b4b25842f107c6ed9d30a3a7c7"},
 
 		// out of range offsets, no lengths
-		{input: "${BUILDKITE_COMMIT: -128}", want: "1adf998e39f647b4b25842f107c6ed9d30a3a7c7"},
+		{input: "${BUILDKITE_COMMIT: -128}", want: ""}, // before the start, the same as bash
+		{input: "${BUILDKITE_COMMIT: -128:7}", want: ""},
+		{input: "${BUILDKITE_COMMIT: -40}", want: "1adf998e39f647b4b25842f107c6ed9d30a3a7c7"},
+		{input: "${BUILDKITE_COMMIT: -41}", want: ""},
 		{input: "${BUILDKITE_COMMIT:128}", want: ""},
 
 		// in range offsets and lengths
@@ -299,7 +302,7 @@ func TestSubstringsWithOffsets(t *testing.T) {
 		// extreme values must not overflow
 		{input: "${BUILDKITE_COMMIT:1:9223372036854775807}", want: "adf998e39f647b4b25842f107c6ed9d30a3a7c7"},
 		{input: "${BUILDKITE_COMMIT:9223372036854775807:9223372036854775807}", want: ""},
-		{input: "${BUILDKITE_COMMIT: -9223372036854775808:1}", want: "1"},
+		{input: "${BUILDKITE_COMMIT: -9223372036854775808:1}", want: ""},
 		{input: "${BUILDKITE_COMMIT:1:-9223372036854775808}", want: ""},
 	})
 }
@@ -331,6 +334,21 @@ func TestInvalidUTF8IsPreserved(t *testing.T) {
 		{input: "${UNSET:-\xff}", want: "\xff"},
 		{input: "$\xff", want: "$\xff"},
 		{input: "valid � stays", want: "valid � stays"},
+	})
+}
+
+func TestInvalidUTF8InValuesIsPreserved(t *testing.T) {
+	t.Parallel()
+
+	env := interpolate.NewMapEnv(map[string]string{"BAD": "a\xffb\xfe"})
+
+	runInterpolateTests(t, env, []interpolateTest{
+		{input: "${BAD}", want: "a\xffb\xfe"},
+		{input: "${BAD:0}", want: "a\xffb\xfe"},
+		{input: "${BAD:1}", want: "\xffb\xfe"},
+		{input: "${BAD:1:2}", want: "\xffb"},
+		{input: "${BAD: -1}", want: "\xfe"},
+		{input: "${#BAD}", want: "4"},
 	})
 }
 
@@ -461,12 +479,20 @@ func TestEscapingVariables(t *testing.T) {
 		{input: `\\$UNSET`, want: `\\`},
 		{input: `\\\$UNSET`, want: `\\$UNSET`},
 		{input: "${UNSET:-$$}", want: "$"},
-		// SQL dollar-quoted strings, as documented in the README.
+		// SQL examples, as documented in the README.
+		{input: "format('%1$$s', name)", want: "format('%1$s', name)"},
+		{input: `E'\\n'`, want: `E'\\n'`},
+		{input: `name ~ '^abc[$]'`, want: `name ~ '^abc[$]'`},
+		{input: `name ~ '^abc\$'`, want: `name ~ '^abc$'`},
 		{input: "AS $$ SELECT 1 $$", want: "AS $ SELECT 1 $"},
 		{input: "AS $body$ SELECT 1 $body$", want: "AS $ SELECT 1 $"},
 		{input: "AS $$$$ SELECT 1 $$$$", want: "AS $$ SELECT 1 $$"},
 		{input: "AS $$body$$ SELECT 1 $$body$$", want: "AS $body$ SELECT 1 $body$"},
-		{input: `${UNSET:-\}}`, want: `\}`},
+		{input: `${UNSET:-\}}`, want: `}`},
+		{input: `${UNSET:-a\}b}`, want: `a}b`},
+		{input: `${UNSET:-{"a":1\}}::jsonb`, want: `{"a":1}::jsonb`},
+		{input: `${UNSET:-\\}}`, want: `\\}`},
+		{input: `outside \} braces`, want: `outside \} braces`},
 	})
 }
 

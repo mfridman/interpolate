@@ -28,7 +28,8 @@ Identifier        = ( letter | "_" ) { letter | digit | "_" }
 Expansion         = "$" ( Identifier | Brace )
 LiteralDollar     = "$" (not followed by "{" or a letter or "_")
 Brace             = "{" ( Length | Identifier [ Operation ] ) "}"
-Text              = { EscapedBackslash | EscapedDollar | LiteralDollar | all characters except "$" }
+EscapedBrace      = "\}" (only in the word of a brace expansion)
+Text              = { EscapedBackslash | EscapedDollar | EscapedBrace | LiteralDollar | all characters except "$" }
 Expression        = { Text | Expansion }
 Length            = "#" Identifier
 EmptyValue        = ":-" { Expression }
@@ -84,6 +85,12 @@ func (p *Parser) parseExpression(stop ...rune) (Expression, error) {
 		if strings.HasPrefix(p.input[p.pos:], `\\`) {
 			p.pos += 2
 			expr = append(expr, ExpressionItem{Text: `\\`})
+			continue
+		} else if stopStr != "" && strings.HasPrefix(p.input[p.pos:], `\}`) {
+			// Inside a brace expansion, an escaped closing brace is text and does not end the
+			// expansion, the same as bash.
+			p.pos += 2
+			expr = append(expr, ExpressionItem{Text: `}`})
 			continue
 		} else if strings.HasPrefix(p.input[p.pos:], `\$`) || strings.HasPrefix(p.input[p.pos:], `$$`) {
 			p.pos += 2
@@ -191,9 +198,9 @@ func (p *Parser) parseBraceExpansion() (Expansion, error) {
 		case "?":
 			expansion = RequiredExpansion{Identifier: identifier, Message: word}
 		case ":+":
-			expansion = AlternateNonEmptyValueExpansion{Identifier: identifier, Content: word}
+			expansion = AlternateNonEmptyExpansion{Identifier: identifier, Content: word}
 		case "+":
-			expansion = AlternateValueExpansion{Identifier: identifier, Content: word}
+			expansion = AlternateExpansion{Identifier: identifier, Content: word}
 		}
 	}
 

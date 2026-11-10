@@ -164,7 +164,7 @@ func TestParser(t *testing.T) {
 		{
 			input: `${HELLO_WORLD+alt}`,
 			want: interpolate.Expression{
-				{Expansion: interpolate.AlternateValueExpansion{
+				{Expansion: interpolate.AlternateExpansion{
 					Identifier: "HELLO_WORLD",
 					Content: interpolate.Expression{
 						{Text: "alt"},
@@ -175,7 +175,7 @@ func TestParser(t *testing.T) {
 		{
 			input: `${HELLO_WORLD:+alt}`,
 			want: interpolate.Expression{
-				{Expansion: interpolate.AlternateNonEmptyValueExpansion{
+				{Expansion: interpolate.AlternateNonEmptyExpansion{
 					Identifier: "HELLO_WORLD",
 					Content: interpolate.Expression{
 						{Text: "alt"},

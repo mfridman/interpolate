@@ -2,6 +2,7 @@ package interpolate_test
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -25,6 +26,8 @@ func FuzzInterpolate(f *testing.F) {
 		"héllo ${FOO:2:3} \xff",
 		"${FOO",
 		"${",
+		"${BAD} ${BAD:1:2} ${BAD: -1} ${#BAD}",
+		`${UNSET:-a\}b} \} \\$FOO`,
 	} {
 		f.Add(seed)
 	}
@@ -33,6 +36,7 @@ func FuzzInterpolate(f *testing.F) {
 		"FOO":   "héllo wörld 🦀",
 		"BAR":   "bar",
 		"EMPTY": "",
+		"BAD":   "a\xffb\xfe", // invalid UTF-8
 	})
 
 	f.Fuzz(func(t *testing.T, input string) {
@@ -63,8 +67,35 @@ func FuzzInterpolate(f *testing.F) {
 		}
 
 		// Valid UTF-8 input and env values must give valid UTF-8 output.
-		if err == nil && utf8.ValidString(input) && !utf8.ValidString(got) {
+		if err == nil && utf8.ValidString(input) && !slices.Contains(identifiers, "BAD") && !utf8.ValidString(got) {
 			t.Fatalf("Interpolate(%q) = %q, which is not valid UTF-8", input, got)
+		}
+
+		if parseErr != nil {
+			return
+		}
+
+		// After a successful parse, only a required expansion can fail, and its error starts
+		// with the name of the variable.
+		if err != nil && !strings.HasPrefix(err.Error(), "$") {
+			t.Fatalf("Interpolate(%q) error = %v, want an error from a required expansion", input, err)
+		}
+
+		// Without identifiers, the output cannot depend on the env.
+		if len(identifiers) == 0 {
+			gotNil, errNil := interpolate.Interpolate(nil, input)
+			if gotNil != got || (errNil == nil) != (err == nil) {
+				t.Fatalf("Interpolate(%q) = (%q, %v) with env, but (%q, %v) without env", input, got, err, gotNil, errNil)
+			}
+		}
+
+		// Without backslashes, escaping every dollar sign must give the input back unchanged.
+		if !strings.Contains(input, `\`) {
+			escaped := strings.ReplaceAll(input, "$", "$$")
+			unescaped, err := interpolate.Interpolate(env, escaped)
+			if err != nil || unescaped != input {
+				t.Fatalf("Interpolate(%q) = (%q, %v), want (%q, nil)", escaped, unescaped, err, input)
+			}
 		}
 	})
 }
