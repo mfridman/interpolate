@@ -73,13 +73,15 @@ func main() {
 
   - **String length.** The length in characters of the value of parameter shall be substituted. An unset parameter has a length of 0.
 
-- `${parameter:[offset]}`
+- `${parameter:offset}`
 
-  - **Use the substring of parameter after offset.** A negative offset must be separated from the colon with a space, and will select from the end of the string. If the value is out of bounds, an empty string will be substituted. Offsets count characters, not bytes.
+  - **Use the substring of parameter after offset.** A negative offset counts from the end of the value, and must be separated from the colon with a space, as in `${parameter: -2}`. An offset past the end, or before the start, gives an empty string.
 
 - `${parameter:[offset]:[length]}`
 
-  - **Use the substring of parameter after offset of given length.** A negative offset must be separated from the colon with a space, and will select from the end of the string. If the offset is out of bounds, an empty string will be substituted. If the length is greater than the length then the entire string will be returned. A negative length selects up to that many characters from the end of the string. A blank offset or length counts as 0, so `${parameter::2}` is the first two characters. Offsets and lengths are decimal integers; arithmetic expressions are not supported.
+  - **Use the substring of parameter after offset, of at most length characters.** A length past the end gives the rest of the value after the offset. A negative length ends that many characters before the end of the value, so `${parameter:1:-1}` removes the first and the last character. A blank offset or length counts as 0, so `${parameter::2}` is the first two characters.
+
+  Offsets and lengths count characters, not bytes, and are decimal integers; arithmetic expressions are not supported. The offset is required unless a length follows it, so `${parameter:}` is an error.
 
 A parameter name starts with a letter or an underscore, followed by letters, digits, or underscores (`[A-Za-z_][A-Za-z0-9_]*`).
 
@@ -93,7 +95,21 @@ A parameter name starts with a letter or an underscore, followed by letters, dig
 
   - **Literal dollar sign.** The `$` is kept as-is. For example, `$1`, `$(command)`, `price: $5`, and a trailing `$` are not changed.
 
-SQL dollar-quoted strings need escaping. `$$` becomes `$`, and the `$tag` in `$tag$` expands as a variable. Write `$$$$` for `$$` and `$$tag$$` for `$tag$`.
+- `\}` in the word of a brace expansion
+
+  - **Escaped closing brace.** The word stops at the first `}`, so write `\}` for a literal `}`. For example, `${CONFIG:-{"a":1\}}` gives `{"a":1}` when `CONFIG` is unset or empty. Outside a brace expansion, `\}` is kept as-is.
+
+- `\\`
+
+  - **Backslashes are kept.** A double backslash is kept as two backslashes, and it does not escape the `$` that follows it. For example, `\\$NAME` gives `\\` followed by the value of `NAME`. This keeps SQL strings such as `E'\\n'` unchanged. Because `\$` is an escape, you cannot write one backslash directly before a literal `$`. In a regular expression, write `[$]` instead of `\$`.
+
+### SQL
+
+These rules matter when the input is SQL, for example in goose migrations with `ENVSUB ON`:
+
+- Dollar-quoted strings need escaping. `$$` becomes `$`, and the `$tag` in `$tag$` expands as a variable. Write `$$$$` for `$$` and `$$tag$$` for `$tag$`.
+- A `$` followed by a letter or `_` is always a variable. For example, in `format('%1$s', name)`, the `$s` expands. Write `%1$$s`.
+- Positional parameters such as `$1`, and `$` in regular expressions such as `'^abc$'`, are kept as-is.
 
 ## Not supported
 
@@ -107,6 +123,8 @@ This repository is a fork of [buildkite/interpolate](https://github.com/buildkit
 like to thank the authors of that library for their work. I've forked it to make some changes that I
 needed for my own use cases, and to make it easier to maintain. I've also added some tests and
 documentation.
+
+This fork does not track upstream. It has the same behavior for bare `$` signs, but it does not have upstream's `EscapedExpansion` type. In this fork, `Identifiers("$$NAME")` returns no identifiers, while upstream returns `$NAME`. See [CHANGELOG.md](CHANGELOG.md) for the changes in this fork.
 
 ## License
 
