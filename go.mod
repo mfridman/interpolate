@@ -1,3 +1,3 @@
 module github.com/mfridman/interpolate
 
-go 1.19
+go 1.25.0
