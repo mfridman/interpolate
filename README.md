@@ -16,6 +16,8 @@ bash](https://www.gnu.org/software/bash/manual/html_node/Shell-Parameter-Expansi
 go get github.com/mfridman/interpolate@latest
 ```
 
+Requires Go 1.25 or later.
+
 ## Usage
 
 ```go
@@ -78,7 +80,7 @@ func main() {
 
 - `${parameter:[offset]:[length]}`
 
-  - **Use the substring of parameter after offset of given length.** A negative offset must be separated from the colon with a space, and will select from the end of the string. If the offset is out of bounds, an empty string will be substituted. If the length is greater than the length then the entire string will be returned. A negative length selects up to that many characters from the end of the string.
+  - **Use the substring of parameter after offset of given length.** A negative offset must be separated from the colon with a space, and will select from the end of the string. If the offset is out of bounds, an empty string will be substituted. If the length is greater than the length then the entire string will be returned. A negative length selects up to that many characters from the end of the string. A blank offset or length counts as 0, so `${parameter::2}` is the first two characters. Offsets and lengths are decimal integers; arithmetic expressions are not supported.
 
 A parameter name starts with a letter or an underscore, followed by letters, digits, or underscores (`[A-Za-z_][A-Za-z0-9_]*`).
 

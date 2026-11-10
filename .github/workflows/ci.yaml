@@ -5,25 +5,36 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   test:
     name: Run tests (Go ${{ matrix.go-version }})
-    timeout-minutes: 5
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         # The oldest version is the minimum version in go.mod.
-        go-version: ["1.19", "oldstable", "stable"]
+        go-version: ["1.25", "oldstable", "stable"]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          check-latest: true
+          persist-credentials: false
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
           go-version: ${{ matrix.go-version }}
+          # There are no dependencies, so there is nothing to cache.
+          cache: false
       - name: Check Go code formatting
         run: |
           if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
@@ -35,3 +46,6 @@ jobs:
         run: go vet ./...
       - name: Run tests
         run: go test ./... -count=1 -race -v
+      - name: Run fuzz test
+        if: matrix.go-version == 'stable'
+        run: go test -run '^$' -fuzz FuzzInterpolate -fuzztime 60s .

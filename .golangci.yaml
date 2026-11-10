@@ -1,0 +1,27 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - modernize
+    - paralleltest
+    - staticcheck
+    - thelper
+    - tparallel
+    - unused
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true
